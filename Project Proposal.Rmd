@@ -59,11 +59,11 @@ head(weekly_log_returns)
 
 ## Scientific Questions
 
-**Primary:** Between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+1. Between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
 
-**Secondary:** To what extent do the differing acceleration rates of market stress during the Dot-com bubble, the 2008 Financial Crisis, and the COVID-19 crash affect the comparative fit of Hidden Markov Models (HMM) versus Stochastic Volatility (SV) models?
+2. To what extent do the differing acceleration rates of market stress during the Dot-com bubble, the 2008 Financial Crisis, and the COVID-19 crash affect the comparative fit of discrete (HMM) versus continuous (SV) frameworks?
 
-**Tertiary:** Does the predictive accuracy of discrete (HMM) versus continuous (SV) frameworks vary significantly across different market segments?
+3. Does the predictive accuracy of discrete (HMM) versus continuous (SV) frameworks vary significantly across different market segments?
 
 We may alter scientific questions later on.
 
@@ -76,7 +76,10 @@ $$Y_t \mid X_t = i \sim \mathcal{N}(\mu_i, \sigma_i^2)$$
 Where:
 $$\mu_1, \mu_2 \sim \mathcal{N}(0, 1)$$
 $$\sigma_1, \sigma_2 \sim \text{Exponential}(1)$$
-(Note: Should we enforce $\sigma_1 < \sigma_2$, ensuring State 1 always represents the lower-volatility normal market, and State 2 always represents the crisis?). 2. The Latent State Dynamics (The Regime Switching)The sequence of unobserved market states follows a first-order Markov process. The probability distribution of tomorrow's state, $X_t$, is explicitly conditioned on today's state, $X_{t-1}$.
+(Note: Should we enforce $\sigma_1 < \sigma_2$, ensuring State 1 always represents the lower-volatility normal market, and State 2 always represents the crisis?).
+
+### The Latent State Dynamics (The Regime Switching)
+The sequence of unobserved market states follows a first-order Markov process. The probability distribution of tomorrow's state, $X_t$, is explicitly conditioned on today's state, $X_{t-1}$.
 
 ### Latent States
 
@@ -94,6 +97,23 @@ where,
 $$P_{11} \sim \text{Beta}(1, 1)$$
 $$P_{22} \sim \text{Beta}(1, 1)$$
 
-## Stochastic Volatitily Model
+## Stochastic Volatility Model
+Unlike the Hidden Markov Model which assumes the market transitions between discrete latent states (such as 'Calm' and 'Crisis'), the Stochastic Volatility model characterizes volatility as an evolving latent state. This approach is motivated by the inherent nature of financial market dynamics, where shifts in volatility are sometimes gradual rather than instantaneous.
+
+### The Likelihood
+Let $Y_t$ represent the weekly log return of the index at time $t$, and let $h_t$ represent the latent parameter for log-volatility.
+
+$$Y_t \mid h_t \sim N(0, \exp(h_t/2))$$
+
+### Latent State Dynamics
+$$h_t = \mu + \phi(h_{t-1} - \mu) + \delta_t, \quad \delta_t \sim N(0, \sigma)$$
+
+Where:
+
+**$\delta_t$**: The standardized white noise shock (the random "jolt" to volatility at time $t$). \
+**$\mu$**: The mean log-volatility. \
+**$\phi$**: The volatility persistence. \
+**$\sigma$**: The white noise shock scale (volatility of volatility).
 
 ## Equal Contribution
+To ensure equal contribution, our team has divided the workload by model framework. One member manages the Hidden Markov Model (HMM) and sector implementation, while the other spearheads the Stochastic Volatility (SV) model (subject to change) in Stan. We will collaborate equally on data processing, comparative analysis, and the final report. Our contributions will also be tracked on GitHub via commits.
