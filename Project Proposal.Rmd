@@ -1,6 +1,6 @@
 ---
 title: "Project Proposal"
-author: "Alec Neme (84761030)"
+author: "Alec Neme (84761030), Mikayla Liang (xxxxxxxx)"
 date: "2026-03-15"
 output: pdf_document
 ---
@@ -14,7 +14,11 @@ library(lubridate)
 
 ## Dataset Protoytpe
 
-- ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. (probably should use this).
+For this project, we plan to use historical daily adjusted closing prices directly from the Yahoo Finance API, covering the period from January 1, 1998, to the present. This timeframe was selected to encompass three major structural market shocks: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Our primary analysis will focus on the S&P 500 Index. To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures astationary distribution of the time series which facilitates its modelling
+
+### Which ticker is each index? 
+
+- ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. This is the observation that we will most likely use.
 
 - ^VIX (CBOE Volatility Index): Market volatility measure that we can use for model validation.
 
@@ -22,9 +26,9 @@ library(lubridate)
 
 - XLF (Financial Select Sector SPDR Fund): An ETF containing all the financial stocks in the S&P 500 (banks, insurance, etc.). Check for 2008 Financial Crisis?
 
-- TLT (iShares 20+ Year Treasury Bond ETF): This tracks long-term US government bonds. "Safe haven" asset that normally behaves opposite to stocks. Does the model still work with this IDK?
+- TLT (iShares 20+ Year Treasury Bond ETF): This tracks long-term US government bonds. "Safe haven" asset that normally behaves opposite to stocks. Does the model still work with this?
 
-We use log return $log(P_t / P_{t-1})$ because it makes it easier to work with financial data.
+We may also choose to include some other indexes. 
 
 ```{r}
 project_tickers <- c("^GSPC", "^VIX", "XLK", "XLF", "TLT")
