@@ -12,7 +12,7 @@ library(dplyr)
 library(lubridate)
 ```
 
-Which assumption—discrete regime shifts (HMM) or continuous volatility evolution (Stochastic Volatility)-better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+## Dataset Protoytpe
 
 - ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. (probably should use this).
 
@@ -54,6 +54,10 @@ weekyly_log_returns <- weekly_returns %>%
 head(weekyly_log_returns)
 ```
 
+## Scientific Questions
+
+Which assumption—discrete regime shifts (HMM) or continuous volatility evolution (Stochastic Volatility)-better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+
 ## Hidden Markov Model
 
 ### The Likelihood
@@ -69,6 +73,7 @@ $$\sigma_1, \sigma_2 \sim \text{Exponential}(1)$$
 
 $$X_t \mid X_{t-1} = 1 \sim \text{Categorical}(P_{11}, 1 - P_{11})$$
 $$X_t \mid X_{t-1} = 2 \sim \text{Categorical}(1 - P_{22}, P_{22})$$
+
 ### Transition Probabilities
 
 $$P = \begin{pmatrix} 
@@ -80,3 +85,6 @@ where,
 $$P_{11} \sim \text{Beta}(1, 1)$$
 $$P_{22} \sim \text{Beta}(1, 1)$$
 
+## Stochastic Volatitily Model
+
+## Equal Contribution
