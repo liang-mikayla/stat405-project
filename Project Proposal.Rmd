@@ -1,0 +1,56 @@
+---
+title: "Project Proposal"
+author: "Alec Neme (84761030)"
+date: "2026-03-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyquant) 
+library(dplyr)
+library(lubridate)
+```
+
+Which assumption—discrete regime shifts (HMM) or continuous volatility evolution (Stochastic Volatility)-better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+
+- ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. (probably should use this).
+
+- ^VIX (CBOE Volatility Index): Market volatility measure that we can use for model validation.
+
+- XLK (Technology Select Sector SPDR Fund): An ETF containing all the tech stocks in the S&P 500. Maybe use for dot com crash? 
+
+- XLF (Financial Select Sector SPDR Fund): An ETF containing all the financial stocks in the S&P 500 (banks, insurance, etc.). Check for 2008 Financial Crisis?
+
+- TLT (iShares 20+ Year Treasury Bond ETF): This tracks long-term US government bonds. "Safe haven" asset that normally behaves opposite to stocks. Does the model still work with this IDK?
+
+We use log return $log(P_t / P_{t-1})$ because it makes it easier to work with financial data.
+
+```{r}
+project_tickers <- c("^GSPC", "^VIX", "XLK", "XLF", "TLT")
+market_data <- tq_get(project_tickers,
+                      get  = "stock.prices",
+                      from = "1998-01-01")
+
+weekly_returns <- market_data %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(symbol, week) %>%
+  arrange(date) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+  
+  
+weekyly_log_returns <- weekly_returns %>%
+  group_by(symbol) %>%
+  arrange(date) %>%
+  mutate(
+    previous_price = lag(adjusted),
+    log_return = log(adjusted / previous_price)
+  ) %>%
+  
+  filter(!is.na(log_return)) %>%
+  select(symbol, date, adjusted, log_return)
+
+head(weekyly_log_returns)
+```
+
