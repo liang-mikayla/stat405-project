@@ -54,3 +54,4 @@ weekyly_log_returns <- weekly_returns %>%
 head(weekyly_log_returns)
 ```
 
+This is just a test. 
