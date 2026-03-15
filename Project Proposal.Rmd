@@ -1,5 +1,5 @@
 ---
-title: "Project Proposal"
+title: "STAT 405 Project Proposal"
 author: "Alec Neme (84761030), Mikayla Liang (87701603)"
 date: "2026-03-15"
 output: pdf_document
@@ -14,9 +14,7 @@ library(lubridate)
 
 ## Dataset Protoytpe
 
-Test
-
-For this project, we plan to use historical daily adjusted closing prices directly from the Yahoo Finance API, covering the period from January 1, 1998, to the present. This timeframe was selected to encompass three major structural market shocks: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Our primary analysis will focus on the S&P 500 Index. To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures astationary distribution of the time series which facilitates its modelling
+For this project, we plan to use historical daily adjusted closing prices directly from the Yahoo Finance API, covering the period from January 1, 1998, to the present. This timeframe was selected to encompass three major structural market shocks: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Our primary analysis will focus on the S&P 500 Index. To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
 ### Which ticker is each index? 
 
@@ -46,23 +44,28 @@ weekly_returns <- market_data %>%
   ungroup()
   
   
-weekyly_log_returns <- weekly_returns %>%
+weekly_log_returns <- weekly_returns %>%
   group_by(symbol) %>%
   arrange(date) %>%
   mutate(
     previous_price = lag(adjusted),
     log_return = log(adjusted / previous_price)
   ) %>%
-  
   filter(!is.na(log_return)) %>%
   select(symbol, date, adjusted, log_return)
 
-head(weekyly_log_returns)
+head(weekly_log_returns)
 ```
 
 ## Scientific Questions
 
-Which assumption—discrete regime shifts (HMM) or continuous volatility evolution (Stochastic Volatility)-better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+**Primary:** Between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+
+**Secondary:** To what extent do the differing acceleration rates of market stress during the Dot-com bubble, the 2008 Financial Crisis, and the COVID-19 crash affect the comparative fit of Hidden Markov Models (HMM) versus Stochastic Volatility (SV) models?
+
+**Tertiary:** Does the predictive accuracy of discrete (HMM) versus continuous (SV) frameworks vary significantly across different market segments?
+
+We may alter scientific questions later on.
 
 ## Hidden Markov Model
 
