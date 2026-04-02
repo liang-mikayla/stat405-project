@@ -92,3 +92,7 @@ $$P_{22} \sim \text{Beta}(1, 1)$$
 ## Stochastic Volatitily Model
 
 ## Equal Contribution
+
+## sigma1 > sigma2
+
+sigma 1 exp, then sigma 2 = sigma 1 plus something (another exponential). 
