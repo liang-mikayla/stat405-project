@@ -1,0 +1,182 @@
+---
+title: "STAT 405 Project Proposal"
+author: "Alec Neme (84761030), Mikayla Liang (87701603)"
+date: "2026-03-15"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyquant) 
+library(dplyr)
+library(lubridate)
+```
+
+## Dataset Protoytpe
+
+For this project, we plan to use historical daily adjusted closing prices directly from the Yahoo Finance API, covering the period from January 1, 1998, to the present. This timeframe was selected to encompass three major structural market shocks: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Our primary analysis will focus on the S&P 500 Index. To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
+
+### Which ticker is each index? 
+
+- ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. This is the observation that we will most likely use.
+
+- ^VIX (CBOE Volatility Index): Market volatility measure that we can use for model validation.
+
+- XLK (Technology Select Sector SPDR Fund): An ETF containing all the tech stocks in the S&P 500. Maybe use for dot com crash? 
+
+- XLF (Financial Select Sector SPDR Fund): An ETF containing all the financial stocks in the S&P 500 (banks, insurance, etc.). Check for 2008 Financial Crisis?
+
+- TLT (iShares 20+ Year Treasury Bond ETF): This tracks long-term US government bonds. "Safe haven" asset that normally behaves opposite to stocks. Does the model still work with this?
+
+We may also choose to include some other indexes. 
+
+```{r}
+project_tickers <- c("^GSPC", "^VIX", "XLK", "XLF", "TLT")
+market_data <- tq_get(project_tickers,
+                      get  = "stock.prices",
+                      from = "1998-01-01")
+
+weekly_returns <- market_data %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(symbol, week) %>%
+  arrange(date) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+  
+  
+weekly_log_returns <- weekly_returns %>%
+  group_by(symbol) %>%
+  arrange(date) %>%
+  mutate(
+    previous_price = lag(adjusted),
+    log_return = log(adjusted / previous_price)
+  ) %>%
+  filter(!is.na(log_return)) %>%
+  select(symbol, date, adjusted, log_return)
+
+head(weekly_log_returns)
+```
+
+Our backup dataset uses the 'quantmod' library which also pulls live data from Yahoo Finance. The data has also been adjusted to match the structure of the primary dataset.
+
+```{r}
+library(quantmod)
+library(tidyverse)
+
+getSymbols(project_tickers, src = "yahoo", from = "1998-01-01")
+
+restructured_data <- do.call(rbind, lapply(project_tickers, function(x) {
+  clean_name <- gsub("\\^", "", x)
+  if(!exists(clean_name)) return(NULL)
+  
+  obj <- get(clean_name)
+  
+  names(obj) <- c("Open", "High", "Low", "Close", "Volume", "Adjusted")
+  df <- data.frame(date = index(obj), coredata(obj))
+  
+  df$ticker <- x
+  return(df)
+}))
+
+restructured_data <- restructured_data %>%
+  select(date, ticker, High, Low, Close, Volume, Adjusted)
+
+weekly_returns2 <- restructured_data %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(ticker, week) %>%
+  arrange(date) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+
+weekly_log_returns2 <- weekly_returns2 %>%
+  group_by(ticker) %>%
+  arrange(date) %>%
+  mutate(
+    previous_price = lag(Adjusted),
+    log_return = log(Adjusted / previous_price)
+  ) %>%
+  filter(!is.na(log_return)) %>%
+  select(ticker, date, Adjusted, log_return)
+
+head(weekly_log_returns2)
+```
+
+
+## Scientific Questions
+
+1. Between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+
+2. To what extent do the differing acceleration rates of market stress during the Dot-com bubble, the 2008 Financial Crisis, and the COVID-19 crash affect the comparative fit of discrete (HMM) versus continuous (SV) frameworks?
+
+## EDA
+
+```{r}
+# Using the market_data object you created earlier
+market_data %>%
+  filter(symbol %in% c("^GSPC", "^VIX")) %>%
+  ggplot(aes(x = date, y = adjusted, color = symbol)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~symbol, scales = "free_y", ncol = 1) +
+  theme_minimal() +
+  labs(title = "S&P 500 Index vs. VIX Volatility (1998 - Present)",
+       subtitle = "Visualizing structural market shocks and volatility clustering",
+       x = "Year",
+       y = "Adjusted Value / Index Level") +
+  scale_color_manual(values = c("^GSPC" = "steelblue", "^VIX" = "firebrick"))
+```
+The visualization highlights a clear inverse correlation: significant price contractions in the S&P 500 ($^GSPC$) correspond directly to sharp spikes in the VIX. These synchronized movements clearly mark the three major structural shocks identified in our proposal. The abrupt, vertical nature of these volatility surges visually mimics discrete state transitions, reinforcing our decision to utilize a Hidden Markov Model (HMM).
+
+Furthermore, the raw S&P 500 series exhibits a distinct upward trend over the 25-year period, indicating it is non-stationary. By transforming these prices into weekly log returns, $Y_{t}=\ln(P_{t}/P_{t-1})$, we remove this drift and stabilize the variance. This transformation is mathematically critical; it ensures our HMM operates on a stationary distribution, which is a necessary condition for the model to reliably infer the "Calm" and "Crisis" latent states over the long term.
+
+
+## Hidden Markov Model
+
+### The Likelihood
+Let $Y_t$ represent the weekly log return of the index at time $t$, and let $X_t \in \{1, 2\}$. State 1 represents a "Calm/Normal" market regime, and State 2 represents a "Crisis" regime.
+$$Y_t \mid X_t = i \sim \mathcal{N}(\mu_i, \sigma_i^2)$$
+
+Where:
+$$\sigma_{1} \sim Exponential(1)$$
+$$\sigma_{diff} \sim Exponential(1)$$
+$$\sigma_{2} = \sigma_{1} + \sigma_{diff}$$
+
+
+### The Latent State Dynamics (The Regime Switching)
+The sequence of unobserved market states follows a first-order Markov process. The probability distribution of tomorrow's state, $X_t$, is explicitly conditioned on today's state, $X_{t-1}$.
+
+### Latent States
+
+$$X_t \mid X_{t-1} = 1 \sim \text{Categorical}(P_{11}, 1 - P_{11})$$
+$$X_t \mid X_{t-1} = 2 \sim \text{Categorical}(1 - P_{22}, P_{22})$$
+
+### Transition Probabilities
+
+$$P = \begin{pmatrix} 
+P_{11} & 1 - P_{11} \\ 
+1 - P_{22} & P_{22} 
+\end{pmatrix}$$
+where, 
+
+$$P_{11} \sim \text{Beta}(1, 1)$$
+$$P_{22} \sim \text{Beta}(1, 1)$$
+
+## Stochastic Volatility Model
+Unlike the Hidden Markov Model which assumes the market transitions between discrete latent states (such as 'Calm' and 'Crisis'), the Stochastic Volatility model characterizes volatility as an evolving latent state. This approach is motivated by the inherent nature of financial market dynamics, where shifts in volatility are sometimes gradual rather than instantaneous.
+
+### The Likelihood
+Let $Y_t$ represent the weekly log return of the index at time $t$, and let $h_t$ represent the latent parameter for log-volatility.
+
+$$Y_t \mid h_t \sim N(0, \exp(h_t/2))$$
+
+### Latent State Dynamics
+$$h_t = \mu + \phi(h_{t-1} - \mu) + \delta_t, \quad \delta_t \sim N(0, \sigma)$$
+
+Where:
+
+**$\delta_t$**: The standardized white noise shock (the random "jolt" to volatility at time $t$). \
+**$\mu$**: The mean log-volatility. \
+**$\phi$**: The volatility persistence. \
+**$\sigma$**: The white noise shock scale (volatility of volatility).
+
+## Equal Contribution
+To ensure equal contribution, our team has divided the workload by model framework. One member manages the Hidden Markov Model (HMM) and sector implementation, while the other spearheads the Stochastic Volatility (SV) model (subject to change) in Stan. We will collaborate equally on data processing, comparative analysis, and the final report. Our contributions will also be tracked on GitHub via commits.
