@@ -106,6 +106,12 @@ head(weekly_log_returns2)
 ```
 
 
+## Scientific Questions
+
+1. Between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+
+2. To what extent do the differing acceleration rates of market stress during the Dot-com bubble, the 2008 Financial Crisis, and the COVID-19 crash affect the comparative fit of discrete (HMM) versus continuous (SV) frameworks?
+
 ## EDA
 
 ```{r}
