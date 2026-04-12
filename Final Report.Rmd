@@ -1,5 +1,5 @@
 ---
-title: "STAT 405 Project Proposal"
+title: "STAT 405 Final Project"
 author: "Alec Neme (84761030), Mikayla Liang (87701603)"
 date: "2026-03-15"
 output: pdf_document
@@ -160,23 +160,58 @@ where,
 $$P_{11} \sim \text{Beta}(1, 1)$$
 $$P_{22} \sim \text{Beta}(1, 1)$$
 
-## Stochastic Volatility Model
-Unlike the Hidden Markov Model which assumes the market transitions between discrete latent states (such as 'Calm' and 'Crisis'), the Stochastic Volatility model characterizes volatility as an evolving latent state. This approach is motivated by the inherent nature of financial market dynamics, where shifts in volatility are sometimes gradual rather than instantaneous.
+### The Marginalized Joint Likelihood
 
-### The Likelihood
-Let $Y_t$ represent the weekly log return of the index at time $t$, and let $h_t$ represent the latent parameter for log-volatility.
+Because Stan's Hamiltonian Monte Carlo (HMC) algorithm relies on continuous gradient calculations, it cannot directly sample discrete latent parameters. Consequently, we must apply Rao-Blackwellization by computing the marginal posterior, effectively summing out the discrete state sequence $X_{1:T}$. 
 
-$$Y_t \mid h_t \sim N(0, \exp(h_t/2))$$
+Over the whole dataset, the brute-force marginalized joint likelihood requires summing over the two states $\{1, 2\}$ for all $T$ weeks:
 
-### Latent State Dynamics
-$$h_t = \mu + \phi(h_{t-1} - \mu) + \delta_t, \quad \delta_t \sim N(0, \sigma)$$
+$$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \sum_{x_2=1}^2 \dots \sum_{x_T=1}^2 p(Y_{1:T}, X_{1:T} = x_{1:T} | \theta, P)$$
 
-Where:
+By factoring the joint distribution into the initial state probabilities $\pi$, the transition matrix $P$, and the state-dependent emission likelihoods, we obtain the fully expanded equation:
 
-**$\delta_t$**: The standardized white noise shock (the random "jolt" to volatility at time $t$). \
-**$\mu$**: The mean log-volatility. \
-**$\phi$**: The volatility persistence. \
-**$\sigma$**: The white noise shock scale (volatility of volatility).
+$$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \dots \sum_{x_T=1}^2 \left[ \pi_{x_1} p(Y_1 | \mu_{x_1}, \sigma_{x_1}^2) \prod_{t=2}^T P_{x_{t-1}, x_t} p(Y_t | \mu_{x_t}, \sigma_{x_t}^2) \right]$$
 
-## Equal Contribution
-To ensure equal contribution, our team has divided the workload by model framework. One member manages the Hidden Markov Model (HMM) and sector implementation, while the other spearheads the Stochastic Volatility (SV) model (subject to change) in Stan. We will collaborate equally on data processing, comparative analysis, and the final report. Our contributions will also be tracked on GitHub via commits.
+This exhaustive summation involves $2^T$ unique possible paths. Computing this $\mathcal{O}(2^T)$ sum at every MCMC step is computationally expensive.
+
+### Rao-Blackwellization via the Forward Algorithm
+
+To resolve this computational bottleneck, we utilize the Forward Algorithm. The Forward Algorithm is a dynamic programming approach that relies on the conditional independence of the HMM. Instead of calculating the probability of every single distinct path from week 1 to week $T$ independently, the algorithm calculates the probability sequentially and caches the intermediate results. 
+
+Because the Markov property dictates that the future state depends only on the present state, we do not need to track how the market arrived at a certain state, only the accumulated probability mass of being there. We define a forward variable, $\alpha_t(j)$, representing the joint probability of observing the sequence of returns up to time $t$ and currently being in state $j$:
+
+$$\alpha_t(j) = p(Y_{1:t}, X_t = j | \theta, P)$$
+
+The algorithm computes this dynamically in three steps:
+
+#### 1. Base Case ($t = 1$):
+
+$$\alpha_1(j) = \pi_j p(Y_1 | \mu_j, \sigma_j^2) \quad \text{for } j \in \{1, 2\}$$
+
+#### 2. Recursive Step ($t = 2, \dots, T$):
+
+By summing the cached probabilities from the previous week ($\alpha_{t-1}(i)$) and multiplying by the transition probability $P_{ij}$, we find the total probability of arriving at state $j$. We then multiply by the new emission likelihood:
+
+$$\alpha_t(j) = p(Y_t | \mu_j, \sigma_j^2) \sum_{i=1}^2 \alpha_{t-1}(i) P_{ij}$$
+
+#### 3. Termination (Marginalized Likelihood):
+At the final week $T$, the algorithm has compressed the $2^T$ paths into just two values: $\alpha_T(1)$ and $\alpha_T(2)$, representing the joint probability of the entire dataset ending in State 1 and State 2, respectively. By the Law of Total Probability, since the market must end in one of these two mutually exclusive states, the final marginalized likelihood is simply their sum:
+
+$$L(\theta, P ; Y_{1:T}) = p(Y_{1:T} | \theta, P) = \sum_{j=1}^2 \alpha_T(j)$$
+
+This reduces the time complexity from $\mathcal{O}(2^T)$ to $\mathcal{O}(T)$.
+
+### Log-Space Implementation
+
+While the Forward Algorithm solves the theoretical complexity, implementing it directly may cause underflow. Multiplying hundreds of small probability values quickly results in a number smaller than a computer's floating-point limit (e.g., $10^{-308}$), causing the software to round the total likelihood to zero.
+
+To maintain numerical stability, Stan evaluates the marginalized posterior strictly in log-space. We define the log-forward variable as $\log \alpha_t(j)$.The base case becomes a simple addition:
+$$\log \alpha_1(j) = \log \pi_j + \log p(Y_1 | \mu_j, \sigma_j^2)$$
+
+The recursive step requires taking the log of a sum, which Stan handles using the stable log_sum_exp function:
+
+$$\log \alpha_t(j) = \log p(Y_t | \mu_j, \sigma_j^2) + \log \left( \sum_{i=1}^2 \exp(\log \alpha_{t-1}(i) + \log P_{ij}) \right)$$
+
+Finally, the total marginalized log-likelihood is the log-sum-exp of the final terminal states:
+
+$$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) \right)$$
