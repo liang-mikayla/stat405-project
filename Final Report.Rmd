@@ -7,9 +7,11 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(cmdstanr)
 library(tidyquant) 
 library(dplyr)
 library(lubridate)
+library(ggplot2)
 ```
 
 ## Abstract
@@ -219,3 +221,54 @@ $$\log \alpha_t(j) = \log p(Y_t | \mu_j, \sigma_j^2) + \log \left( \sum_{i=1}^2 
 Finally, the total marginalized log-likelihood is the log-sum-exp of the final terminal states:
 
 $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) \right)$$
+
+## Implmentation of HMM
+
+```{r}
+
+# Compile the model
+model <- cmdstan_model("C:/Users/alnem/Downloads/hmm_volatility.stan")
+
+# Prepare data (using your existing weekly_log_returns object)
+gspc_returns <- weekly_log_returns %>%
+  filter(symbol == "^GSPC") %>%
+  arrange(date)
+
+stan_data <- list(
+  T = nrow(gspc_returns),
+  Y = gspc_returns$log_return
+)
+
+# Fit the model
+fit <- model$sample(
+  data      = stan_data,
+  chains    = 4,
+  parallel_chains = 4,       # run chains in parallel
+  iter_warmup   = 1000,
+  iter_sampling = 1000,
+  adapt_delta   = 0.95,
+  seed      = 405             # reproducibility
+)
+
+# Summary of key parameters
+fit$summary(variables = c("mu", "sigma_1", "sigma_2", "P11", "P22"))
+
+# Extract prob_crisis for plotting
+prob_crisis <- fit$summary("prob_crisis") %>%
+  mutate(date = gspc_returns$date)
+
+```
+
+```{r}
+# Plot regime probabilities against VIX
+prob_crisis %>%
+  ggplot(aes(x = date, y = mean)) +
+  geom_line(color = "steelblue") +
+  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.2, fill = "steelblue") +
+  labs(
+    title    = "Posterior P(Crisis State) — HMM",
+    subtitle = "Shaded band = 5th–95th percentile across posterior draws",
+    x = "Date", y = "P(X_t = Crisis)"
+  ) +
+  theme_minimal()
+```
