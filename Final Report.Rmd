@@ -224,12 +224,10 @@ $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) 
 
 ## Implmentation of HMM
 
-```{r}
+```{r message=FALSE}
 
-# Compile the model
-model <- cmdstan_model("C:/Users/alnem/Downloads/hmm_volatility.stan")
+model <- cmdstan_model("/Users/mikaylalynn/Desktop/School/stat405-project/hmm_volatility.stan")
 
-# Prepare data (using your existing weekly_log_returns object)
 gspc_returns <- weekly_log_returns %>%
   filter(symbol == "^GSPC") %>%
   arrange(date)
@@ -239,21 +237,19 @@ stan_data <- list(
   Y = gspc_returns$log_return
 )
 
-# Fit the model
 fit <- model$sample(
-  data      = stan_data,
-  chains    = 4,
-  parallel_chains = 4,       # run chains in parallel
-  iter_warmup   = 1000,
+  data = stan_data,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
   iter_sampling = 1000,
-  adapt_delta   = 0.95,
-  seed      = 405             # reproducibility
+  adapt_delta = 0.95,
+  seed = 405,
+  refresh = 0
 )
 
-# Summary of key parameters
 fit$summary(variables = c("mu", "sigma_1", "sigma_2", "P11", "P22"))
 
-# Extract prob_crisis for plotting
 prob_crisis <- fit$summary("prob_crisis") %>%
   mutate(date = gspc_returns$date)
 
