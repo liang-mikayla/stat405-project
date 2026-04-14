@@ -20,11 +20,13 @@ Investor confidence is fundamentally tied to market stability, as sudden transit
 
 ## Introduction
 
-Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk, enabling more confident investment decisions. Traditionally, market volatility is modeled by [...].
+Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk and make confident investment decisions. Historically, forecasting has relied on frequentist methodologies, such as ARIMA and GARCH. However, these models are limited by their inability to incorporate prior context or macroeconomic indicators. In contrast, Bayesian approaches integrate prior probability distributions and studies show that they typically achieve greater accuracy in predicting market volatility.
 
-This study compares two methods to determine which better explains market dynamics: Hidden Markov Models (HMM), which model abrupt shifts between distinct market states, and Variational Inference (VI), which captures smooth continuous changes in volatility. 
+Market volatility can manifest as either sudden shocks or gradual fluctuations. To determine which framework better captures these dynamics, this study compares two Bayesian methods: Hidden Markov Models (HMM), which account for abrupt shifts between distinct market states, and Variational Inference (VI), which tracks smooth, continuous changes. The selected timeframe encompasses three major market shocks: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Our primary analysis will focus on the S&P 500 Index. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries.
 
-By incorporating prior knowledge and quantifying uncertainty, we aim to provide a more robust approach to identifying volatile markets. This timeframe was selected to encompass three major structural market shocks: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Our primary analysis will focus on the S&P 500 Index. To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
+## Methodology
+
+To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
 ### Which ticker is each index? 
 
@@ -110,13 +112,6 @@ weekly_log_returns2 <- weekly_returns2 %>%
 
 head(weekly_log_returns2)
 ```
-
-
-## Scientific Questions
-
-1. Between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
-
-2. To what extent do the differing acceleration rates of market stress during the Dot-com bubble, the 2008 Financial Crisis, and the COVID-19 crash affect the comparative fit of discrete (HMM) versus continuous (SV) frameworks?
 
 ## EDA
 
@@ -272,3 +267,7 @@ prob_crisis %>%
   ) +
   theme_minimal()
 ```
+
+## Literature Review
+
+https://vlab.stern.nyu.edu/docs/volatility/GARCH
