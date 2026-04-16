@@ -16,14 +16,19 @@ library(ggplot2)
 
 ## Abstract
 
-Investor confidence is fundamentally tied to market stability, as sudden transitions into high-volatility regimes expose investors to significant risk. This study explores the use of Bayesian inference methods in detecting and predicting these volatile periods. Using historical data from Yahoo Finance spanning January 1998 to the present, the comparative models identify latent shifts in market behaviour driven by rapid economic change. Results demonstrate that ...
+Investor confidence is fundamentally tied to market stability, as sudden transitions into high-volatility regimes expose investors to significant risk. This study explores the use of Bayesian inference methods in detecting and predicting these volatile periods. Using historical data from Yahoo Finance spanning January 1998 to the present, the comparative models identify latent shifts in market behaviour driven by rapid economic change. [Insert results].
 
 ## Introduction
 
-Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk and make confident investment decisions. Historically, forecasting has relied on frequentist methodologies, such as ARIMA and GARCH. However, these models are limited by their inability to incorporate prior context or macroeconomic indicators. In contrast, Bayesian approaches integrate prior probability distributions and studies show that they typically achieve greater accuracy in predicting market volatility.
+Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk and make confident investment decisions. Historically, forecasting has relied on frequentist methodologies, such as ARIMA and GARCH. However, these models are limited by their inability to incorporate prior context or macroeconomic indicators. In contrast, Bayesian approaches integrate prior probability distributions and typically achieve greater accuracy in predicting volatility.
 
-Market volatility can manifest as either sudden shocks or gradual fluctuations. To determine which method better captures these dynamics, this study compares the following Bayesian approaches: Hidden Markov Models (HMM), which account for abrupt shifts between distinct market states, and Variational Inference (VI), which tracks smooth, continuous changes. The analysis spans three major market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. Given that these events primarily impacted North American markets, the S&P 500 Index serves as the primary dataset.
+To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by fitting the regime-switching process jointly across multiple assets [?]. This joint structure allows the model to combine information across assets and produce more accurate estimates of how markets are impacted by volatility. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both inferential methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
 
+The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. 
+
+## Literature Review
+
+[Description of sections]
 
 ## Methodology
 
@@ -71,7 +76,6 @@ head(weekly_log_returns)
 ## EDA
 
 ```{r}
-# Using the market_data object you created earlier
 market_data %>%
   filter(symbol %in% c("^GSPC", "^VIX")) %>%
   ggplot(aes(x = date, y = adjusted, color = symbol)) +
@@ -223,6 +227,8 @@ prob_crisis %>%
   theme_minimal()
 ```
 
-## Literature Review
+## References
 
 https://vlab.stern.nyu.edu/docs/volatility/GARCH
+https://www.ijirmf.com/wp-content/uploads/IJIRMF202410007-min.pdf 
+https://www.jstor.org/stable/1392199?if_data=e30%3D&seq=1 
