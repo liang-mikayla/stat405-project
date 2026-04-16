@@ -28,14 +28,14 @@ transformed parameters {
   log_P[2, 2] = log(P22);
 
   for (j in 1:2)
-    log_alpha_full[1, j] = log(0.5) + normal_lpdf(Y[1] | mu, sigma[j]);
+    log_alpha_full[1, j] = log(0.5) + normal_lpdf(Y[1] | 0, sigma[j]);
 
   for (t in 2:T) {
     for (j in 1:2) {
       vector[2] accumulator;
       for (i in 1:2)
         accumulator[i] = log_alpha_full[t-1, i] + log_P[i, j];
-      log_alpha_full[t, j] = normal_lpdf(Y[t] | mu, sigma[j]) + log_sum_exp(accumulator);
+      log_alpha_full[t, j] = normal_lpdf(Y[t] | 0, sigma[j]) + log_sum_exp(accumulator);
     }
   }
 }
@@ -66,7 +66,7 @@ generated quantities {
     for (i in 1:2) {
       vector[2] accumulator;
       for (j in 1:2) {
-        accumulator[j] = log_P[i, j] + normal_lpdf(Y[t+1] | mu, sigma[j]) + log_beta[t+1, j];
+        accumulator[j] = log_P[i, j] + normal_lpdf(Y[t+1] | 0, sigma[j]) + log_beta[t+1, j];
       }
       log_beta[t, i] = log_sum_exp(accumulator);
     }
@@ -78,4 +78,15 @@ generated quantities {
 
     prob_crisis[t] = exp(log_gamma[t, 2] - log_sum_exp(log_gamma[t, 1], log_gamma[t, 2]));
   }
+  
+real y_predict;
+  
+  real p_state1_T = exp(log_alpha_full[T, 1] - log_sum_exp(log_alpha_full[T, 1], log_alpha_full[T, 2]));
+  real p_state2_T = exp(log_alpha_full[T, 2] - log_sum_exp(log_alpha_full[T, 1], log_alpha_full[T, 2]));
+  
+  real p_state1_next = p_state1_T * P11 + p_state2_T * (1 - P22);
+  
+  int predicted_state = bernoulli_rng(1 - p_state1_next) + 1; 
+  
+  y_predict = normal_rng(0, sigma[predicted_state]);
 }
