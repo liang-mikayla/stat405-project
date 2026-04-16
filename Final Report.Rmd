@@ -12,7 +12,7 @@ library(tidyquant)
 library(dplyr)
 library(lubridate)
 library(ggplot2)
-library()
+library(bayesplot)
 ```
 
 ## Abstract
@@ -187,7 +187,7 @@ $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) 
 
 ```{r message=FALSE}
 
-model <- cmdstan_model("hmm_volatility.stan")
+model_hmm <- cmdstan_model("hmm_volatility.stan")
 
 gspc_returns <- weekly_log_returns %>%
   filter(symbol == "^GSPC") %>%
@@ -198,7 +198,7 @@ stan_data <- list(
   Y = gspc_returns$log_return
 )
 
-fit <- model$sample(
+fit_hmm <- model_hmm$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
@@ -211,7 +211,7 @@ fit <- model$sample(
 ```
 
 ```{r}
-prob_crisis_draws <- fit$draws("prob_crisis", format = "matrix")
+prob_crisis_draws <- fit_hmm$draws("prob_crisis", format = "matrix")
 
 mean_prob_crisis <- colMeans(prob_crisis_draws)
 
@@ -229,8 +229,24 @@ data.frame(
     y = "Probability"
   )
 
-fit$summary(c("P11", "P22", "sigma_1", "sigma_2"))
+fit_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2"))
 ```
+
+### HMM Diagnostic Plots
+
+```{r}
+params_naive <- c("P11", "P22", "sigma_1", "sigma_2")
+
+mcmc_trace(fit_hmm$draws(params_naive)) +
+  ggtitle("Trace Plots: Naive HMM") +
+  theme_minimal()
+
+mcmc_rank_hist(fit$draws(params_naive)) +
+  ggtitle("Rank Histograms: Naive HMM") +
+  theme_minimal()
+```
+
+
 ### Model 1 (Naive HMM) Results & Discussion
 
 **Starting Out (Forward Pass Only):** 
