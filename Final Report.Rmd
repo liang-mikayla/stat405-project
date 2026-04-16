@@ -180,7 +180,7 @@ $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) 
 
 ```{r message=FALSE}
 
-model <- cmdstan_model("/Users/mikaylalynn/Desktop/School/stat405-project/hmm_volatility.stan")
+model <- cmdstan_model("hmm_volatility.stan")
 
 gspc_returns <- weekly_log_returns %>%
   filter(symbol == "^GSPC") %>%
