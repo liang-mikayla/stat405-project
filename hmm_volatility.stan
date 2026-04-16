@@ -4,7 +4,6 @@ data {
 }
 
 parameters {
-  real mu;
   real<lower=0> sigma_1;
   real<lower=0> sigma_diff;
   real<lower=0, upper=1> P11;
@@ -41,7 +40,6 @@ transformed parameters {
 }
 
 model {
-  mu ~ normal(0, 1);
   sigma_1 ~ exponential(1);
   sigma_diff ~ exponential(1);
 
