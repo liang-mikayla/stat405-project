@@ -227,6 +227,14 @@ prob_crisis %>%
   theme_minimal()
 ```
 
+## Hierarchical Hidden Markov Model (Model 2)
+
+While our baseline HMM successfully captures discrete regime shifts, relying on fixed hyper-parameters (such as $\sigma_i \sim \text{Exponential}(1)$) introduces a vulnerability: the posterior may be overly sensitive to these rigid prior assumptions. To mitigate this and capture the true scale of market volatility driven by the data, we introduce a Hierarchical Hidden Markov Model (HHMM). 
+
+Because weekly log returns are practically indistinguishable from zero and a "crisis" is defined primarily by an explosion in variance rather than a shift in the mean, we simplify the emission model by assuming a constant global mean ($\mu$) across both states. This isolates the regime-switching mechanics entirely on the market volatility.
+
+
+
 ## References
 
 https://vlab.stern.nyu.edu/docs/volatility/GARCH
