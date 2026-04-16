@@ -12,6 +12,7 @@ library(tidyquant)
 library(dplyr)
 library(lubridate)
 library(ggplot2)
+library()
 ```
 
 ## Abstract
@@ -22,7 +23,7 @@ Investor confidence is fundamentally tied to market stability, as sudden transit
 
 Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk and make confident investment decisions. Historically, forecasting has relied on frequentist methodologies, such as ARIMA and GARCH. However, these models are limited by their inability to incorporate prior context or macroeconomic indicators. In contrast, Bayesian approaches integrate prior probability distributions and typically achieve greater accuracy in predicting volatility.
 
-To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by fitting the regime-switching process jointly across multiple assets [?]. This joint structure allows the model to combine information across assets and produce more accurate estimates of how markets are impacted by volatility. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both inferential methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
+To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by introducing a hierarchical structure to the emission variances. Instead of relying on rigid, fixed priors that are highly sensitive to the scale of log returns, the HHMM utilizes a data-driven hyperparameter to dictate the rate of volatility. This flexible structure allows the model to better accommodate the "fat tails" inherent in financial data, preventing single-week outliers from hijacking the latent state estimation and producing much more accurate, sustained regime probabilities. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
 
 The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. 
 
@@ -97,7 +98,7 @@ Furthermore, the raw S&P 500 series exhibits a distinct upward trend over the 25
 
 ### The Likelihood
 Let $Y_t$ represent the weekly log return of the index at time $t$, and let $X_t \in \{1, 2\}$. State 1 represents a "Calm/Normal" market regime, and State 2 represents a "Crisis" regime.
-$$Y_t \mid X_t = i \sim \mathcal{N}(\mu_i, \sigma_i^2)$$
+$$Y_t \mid X_t = i \sim \mathcal{N}(0, \sigma_i^2)$$
 
 Where:
 $$\sigma_{1} \sim Exponential(1)$$
@@ -121,8 +122,10 @@ P_{11} & 1 - P_{11} \\
 \end{pmatrix}$$
 where, 
 
-$$P_{11} \sim \text{Beta}(1, 1)$$
-$$P_{22} \sim \text{Beta}(1, 1)$$
+$$P_{11} \sim \text{Beta}(50, 2)$$
+$$P_{22} \sim \text{Beta}(20, 2)$$
+
+We chose these priors for the diagonal probabilities, since we expect the markets to persist, and we want the model to ignore sudden weekly fluctuations in volatility, and focus on the bigger picture of being in a certain latent state. The probability of being stuck in a crisis state is modelled to be less sticky than when in a calm state, since people and policy are actively trying to avoid being in a crisis. 
 
 ### The Marginalized Joint Likelihood
 
@@ -205,27 +208,45 @@ fit <- model$sample(
   seed = 405,
   refresh = 0
 )
-
-fit$summary(variables = c("mu", "sigma_1", "sigma_2", "P11", "P22"))
-
-prob_crisis <- fit$summary("prob_crisis") %>%
-  mutate(date = gspc_returns$date)
-
 ```
 
 ```{r}
-# Plot regime probabilities against VIX
-prob_crisis %>%
-  ggplot(aes(x = date, y = mean)) +
-  geom_line(color = "steelblue") +
-  geom_ribbon(aes(ymin = q5, ymax = q95), alpha = 0.2, fill = "steelblue") +
+prob_crisis_draws <- fit$draws("prob_crisis", format = "matrix")
+
+mean_prob_crisis <- colMeans(prob_crisis_draws)
+
+data.frame(
+  date = gspc_returns$date,
+  prob = mean_prob_crisis
+) %>%
+  ggplot(aes(x = date, y = prob)) +
+  geom_line(color = "firebrick") + # A distinct color for the smoothed probabilities
+  theme_minimal() +
   labs(
-    title    = "Posterior P(Crisis State) — HMM",
-    subtitle = "Shaded band = 5th–95th percentile across posterior draws",
-    x = "Date", y = "P(X_t = Crisis)"
-  ) +
-  theme_minimal()
+    title = "Smoothed Probability of Market Crisis Regime",
+    subtitle = expression("Posterior Mean of " * P(X[t] == Crisis ~ "|" ~ Y["1:T"])),
+    x = "Date",
+    y = "Probability"
+  )
+
+fit$summary(c("P11", "P22", "sigma_1", "sigma_2"))
 ```
+### Model 1 (Naive HMM) Results & Discussion
+
+**Starting Out (Forward Pass Only):** 
+* We started by just using the forward algorithm to calculate "filtered" probabilities. 
+* Because this method only looks at past and present data, it was way too reactive. The model basically panicked at every little market dip, giving us super jittery results instead of identifying actual, long-term crisis periods.
+
+**Bringing in the Backward Pass:** 
+* To smooth out the jitter, we added the backward algorithm to calculate "smoothed" probabilities. 
+* Look at Rabiner (1989) and 2020 MDPI paper
+* The goal here was to let the model look at the *entire* timeline of data at once. With the benefit of hindsight, we hoped it would realize that massive crashes (like 2008) are sustained events, not just random one-week hiccups.
+
+* **Still Jittery (The "Barcode" Effect):** * Even with the backward pass and telling the model to strongly prefer staying in whatever state it was currently in (adding "stickiness"), the plot still looked like a crazy barcode. It kept rapidly flipping back and forth between 0 and 1 almost every week.
+
+* **The Diagnosis (Prior Sensitivity):** 
+* We realized the issue came down to our rigid setup and how we scaled the data. Our fixed priors expected normal-sized numbers, but our raw log returns were tiny decimals with extreme, unpredictable outliers. 
+* When the market had a wild week, the normal math basically broke down. To survive the calculation, the model was forced to jump into the "crisis" state for just that single week, completely ignoring our rules about being sticky. This proved that our naive baseline model was way too sensitive and just couldn't handle the true market volatility.
 
 ## Hierarchical Hidden Markov Model (Model 2)
 
@@ -251,8 +272,54 @@ The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because of the
 
 Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve the "label switching", same as in our naive model. 
 
+### Implmentation of HHMM
+
+```{r}
+model_hierarchical <- cmdstan_model("hhmm_volatility.stan")
+
+stan_data_hierarchical <- list(
+  T = nrow(gspc_returns),
+  Y = gspc_returns$log_return 
+)
+
+fit_hierarchical <- model_hierarchical$sample(
+  data = stan_data_hierarchical,
+  chains = 4,
+  parallel_chains = 4,
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  adapt_delta = 0.95, # High adapt_delta helps with hierarchical model geometry
+  seed = 405
+)
+```
+
+```{r}
+prob_crisis_draws <- fit_hierarchical$draws("prob_crisis", format = "matrix")
+
+mean_prob_crisis <- colMeans(prob_crisis_draws)
+
+data.frame(
+  date = gspc_returns$date,
+  prob = mean_prob_crisis
+) %>%
+  ggplot(aes(x = date, y = prob)) +
+  geom_line(color = "firebrick") +
+  theme_minimal() +
+  labs(
+    title = "Smoothed Probability of Market Crisis Regime (Hierarchical Model)",
+    subtitle = expression("Posterior Mean of " * P(X[t] == Crisis ~ "|" ~ Y["1:T"])),
+    x = "Date",
+    y = "Probability"
+  )
+```
 ## References
 
 https://vlab.stern.nyu.edu/docs/volatility/GARCH
 https://www.ijirmf.com/wp-content/uploads/IJIRMF202410007-min.pdf 
 https://www.jstor.org/stable/1392199?if_data=e30%3D&seq=1 
+
+Rabiner (1989): 
+https://www.cs.ubc.ca/~murphyk/Bayes/rabiner.pdf
+
+MDPI With similar approach:
+https://www.mdpi.com/1911-8074/13/12/311
