@@ -233,7 +233,23 @@ While our baseline HMM successfully captures discrete regime shifts, relying on 
 
 Because weekly log returns are practically indistinguishable from zero and a "crisis" is defined primarily by an explosion in variance rather than a shift in the mean, we simplify the emission model by assuming a constant global mean ($\mu$) across both states. This isolates the regime-switching mechanics entirely on the market volatility.
 
+### Hierarchical Parameter Definitions
 
+The observed weekly log returns are modeled with a constant global mean and state-dependent hierarchical variances:
+$$Y_t \mid X_t = i \sim \mathcal{N}(\mu, \sigma_i^2)$$
+
+Rather than fixing the rate of the Exponential prior, we introduce a hyperparameter $\lambda$ drawn from a Gamma distribution:
+$$\lambda \sim \text{Gamma}(2, 0.1)$$
+$$\sigma_1 \sim \text{Exponential}(\lambda)$$
+$$\sigma_2 \sim \text{Exponential}(\lambda) \quad \text{subject to } \sigma_2 > \sigma_1$$
+
+### Justification of Priors and Constraints
+
+The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because of the following:
+* **Shape Control ($\alpha = 2$):** An Exponential distribution has its mode strictly at zero. By using a Gamma shape parameter of $2$, we introduce a gentle peak that mathematically pushes the sampler away from exactly zero.
+* **Weakly Informative Rate ($\beta = 0.1$):** Because the rate parameter acts as an inverse scale, setting it to $0.1$ spreads the probability mass out over a wide, flat tail. This provides a weakly informative prior that allows the true, extreme volatility of events like the 2008 Financial Crisis and the COVID-19 crash to be driven by the data rather than prior bias. 
+
+Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve the "label switching", same as in our naive model. 
 
 ## References
 
