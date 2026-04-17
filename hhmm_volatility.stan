@@ -4,7 +4,6 @@ data {
 }
 
 parameters {
-  real mu;
   real<lower=0> lambda;
   real<lower=0> sigma_1;
   real<lower=0> sigma_diff;
@@ -29,20 +28,19 @@ transformed parameters {
   log_P[2, 2] = log(P22);
 
   for (j in 1:2)
-    log_alpha_full[1, j] = log(0.5) + normal_lpdf(Y[1] | mu, sigma[j]);
+    log_alpha_full[1, j] = log(0.5) + normal_lpdf(Y[1] | 0, sigma[j]);
 
   for (t in 2:T) {
     for (j in 1:2) {
       vector[2] accumulator;
       for (i in 1:2)
         accumulator[i] = log_alpha_full[t-1, i] + log_P[i, j];
-      log_alpha_full[t, j] = normal_lpdf(Y[t] | mu, sigma[j]) + log_sum_exp(accumulator);
+      log_alpha_full[t, j] = normal_lpdf(Y[t] | 0, sigma[j]) + log_sum_exp(accumulator);
     }
   }
 }
 
 model {
-  mu ~ normal(0 , 1);
   lambda ~ gamma(2, 0.1);
   sigma_1 ~ exponential(lambda);
   sigma_diff ~ exponential(lambda);
@@ -68,7 +66,7 @@ generated quantities {
     for (i in 1:2) {
       vector[2] accumulator;
       for (j in 1:2) {
-        accumulator[j] = log_P[i, j] + normal_lpdf(Y[t+1] | mu, sigma[j]) + log_beta[t+1, j];
+        accumulator[j] = log_P[i, j] + normal_lpdf(Y[t+1] | 0, sigma[j]) + log_beta[t+1, j];
       }
       log_beta[t, i] = log_sum_exp(accumulator);
     }
