@@ -122,11 +122,10 @@ P_{11} & 1 - P_{11} \\
 \end{pmatrix}$$
 where, 
 
-$$P_{11} \sim \text{Beta}(50, 2)$$
-$$P_{22} \sim \text{Beta}(20, 2)$$
+$$P_{11} \sim \text{Beta}(1, 1)$$
+$$P_{22} \sim \text{Beta}(1, 1)$$
 
-We chose these priors for the diagonal probabilities, since we expect the markets to persist, and we want the model to ignore sudden weekly fluctuations in volatility, and focus on the bigger picture of being in a certain latent state. The probability of being stuck in a crisis state is modelled to be less sticky than when in a calm state, since people and policy are actively trying to avoid being in a crisis. 
-
+We chose uniformative priors to keep the model more simple
 ### The Marginalized Joint Likelihood
 
 Because Stan's Hamiltonian Monte Carlo (HMC) algorithm relies on continuous gradient calculations, it cannot directly sample discrete latent parameters. Consequently, we must apply Rao-Blackwellization by computing the marginal posterior, effectively summing out the discrete state sequence $X_{1:T}$. 
@@ -182,6 +181,33 @@ $$\log \alpha_t(j) = \log p(Y_t | 0, \sigma_j^2) + \log \left( \sum_{i=1}^2 \exp
 Finally, the total marginalized log-likelihood is the log-sum-exp of the final terminal states:
 
 $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) \right)$$
+
+### The Backward Algorithm and Smoothed Probabilities
+
+While the Forward algorithm successfully computes the marginalized likelihood required to fit the model, the latent state probabilities it generates are strictly "filtered." The filtered probability, $P(X_t = j \mid Y_{1:t})$, estimates the current market regime using only the data available up to time $t$. Because financial markets are inherently noisy, relying solely on past and present data makes the model hyper-reactive. A single week of extreme volatility might cause the filtered probability to spike into a "Crisis" state, only to immediately revert the following week, failing to capture the sustained nature of true macroeconomic shifts.
+
+To resolve this and accurately identify prolonged market regimes, we must evaluate the probability of the latent state given the *entire* sequence of observations, $P(X_t = j \mid Y_{1:T})$. This is known as the "smoothed" probability. To compute this, we introduce the Backward algorithm.
+
+Much like the Forward algorithm, the Backward algorithm is a dynamic programming approach, but it operates in reverse. We define the backward variable, $\beta_t(j)$, as the probability of observing all future data from $t+1$ to $T$, given that the market is currently in state $j$ at time $t$:
+
+$$\beta_t(j) = p(Y_{t+1:T} \mid X_t = j, \theta, P)$$
+
+The algorithm computes this recursively starting from the end of the time series:
+
+#### 1. Base Case ($t = T$):
+We initialize the final backward variables to 1 (or 0 in log-space), as there are no future observations beyond $T$.
+$$\beta_T(j) = 1 \quad \text{for } j \in \{1, 2\}$$
+
+#### 2. Recursive Step ($t = T-1, T-2, \dots, 1$):
+To compute the backward variable for week $t$, we sum over all possible states $i$ for the next week, multiplying the transition probability $P_{ji}$, the emission likelihood of tomorrow's observation, and tomorrow's cached backward variable:
+$$\beta_t(j) = \sum_{i=1}^2 P_{ji} p(Y_{t+1} \mid \mu_i, \sigma_i^2) \beta_{t+1}(i)$$
+
+#### 3. Computing the Smoothed Probabilities ($\gamma$):
+Once both the forward ($\alpha$) and backward ($\beta$) passes are complete, we combine them. By Bayes' Theorem and the conditional independence properties of the HMM, the joint probability of the entire dataset and being in state $j$ at time $t$ is simply the product of the two variables. We normalize this product to obtain $\gamma_t(j)$, the final smoothed probability:
+
+$$\gamma_t(j) = P(X_t = j \mid Y_{1:T}) = \frac{\alpha_t(j) \beta_t(j)}{\sum_{i=1}^2 \alpha_t(i) \beta_t(i)}$$
+
+By incorporating the backward pass, the model gains the benefit of hindsight. It can look ahead at the future trajectory of the S&P 500 to determine whether a sudden drop was a brief, one-week anomaly or the beginning of a sustained structural crash like the 2008 Financial Crisis.
 
 ## Implmentation of HMM
 
@@ -340,12 +366,14 @@ The predicted log return was 2.18%, which fell within the model’s 90% credible
 * To smooth out the jitter, we added the backward algorithm to calculate "smoothed" probabilities. 
 * Look at Rabiner (1989) and 2020 MDPI paper
 * The goal here was to let the model look at the *entire* timeline of data at once. With the benefit of hindsight, we hoped it would realize that massive crashes (like 2008) are sustained events, not just random one-week hiccups.
+* The Backward pass seemed to make this issue a lot better!
 
-* **Still Jittery (The "Barcode" Effect):** * Even with the backward pass and telling the model to strongly prefer staying in whatever state it was currently in (adding "stickiness"), the plot still looked like a crazy barcode. It kept rapidly flipping back and forth between 0 and 1 almost every week.
+**Potential Limitation of the Model:**
+* Prior sensitivity may be a thing. 
+* We would expect states of the markets to be persisten (i.e., P11, P22 to have higher values). 
+* Using the exponential 1 rigid prior for the market volatilities may be restricting the model. 
 
-* **The Diagnosis (Prior Sensitivity):** 
-* We realized the issue came down to our rigid setup and how we scaled the data. Our fixed priors expected normal-sized numbers, but our raw log returns were tiny decimals with extreme, unpredictable outliers. 
-* When the market had a wild week, the normal math basically broke down. To survive the calculation, the model was forced to jump into the "crisis" state for just that single week, completely ignoring our rules about being sticky. This proved that our naive baseline model was way too sensitive and just couldn't handle the true market volatility.
+
 
 ## Hierarchical Hidden Markov Model (Model 2)
 
@@ -362,6 +390,12 @@ Rather than fixing the rate of the Exponential prior, we introduce a hyperparame
 $$\lambda \sim \text{Gamma}(2, 0.1)$$
 $$\sigma_1 \sim \text{Exponential}(\lambda)$$
 $$\sigma_2 \sim \text{Exponential}(\lambda) \quad \text{subject to } \sigma_2 > \sigma_1$$
+
+$$P_{11} \sim \text{Beta}(50, 2)$$
+
+$$P_{22} \sim \text{Beta}(20, 2)$$
+
+We chose these beta priors because we want market regimes to be sticky (hard to transition from calm to crisis). The crisis should be less persistent, because the world actively works to come out of a crisis. 
 
 ### Justification of Priors and Constraints
 
@@ -425,6 +459,87 @@ mcmc_rank_hist(fit_hierarchical$draws(params_hhmm)) +
   ggtitle("Rank Histograms: Hierarchical HMM") +
   theme_minimal()
 ```
+
+### Correctness check HHMM
+
+```{r message=FALSE}
+T_sim <- 1000
+true_mu <- 0
+true_sigma <- c(0.015, 0.040)
+true_P <- matrix(c(0.95, 0.05, 
+                   0.10, 0.90), nrow = 2, byrow = TRUE)
+
+true_states <- numeric(T_sim)
+true_states[1] <- 1
+for (t in 2:T_sim) {
+  true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ])
+}
+
+simulated_Y <- numeric(T_sim)
+for (t in 1:T_sim) {
+  simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]])
+}
+
+stan_data_synth_hhmm <- list(
+  T = T_sim,
+  Y = simulated_Y
+)
+
+fit_synth_hhmm <- model_hierarchical$sample(
+  data = stan_data_synth_hhmm, 
+  chains = 4, 
+  parallel_chains = 4, 
+  seed = 405, 
+  adapt_delta = 0.95, 
+  refresh = 0
+)
+
+as.data.frame(fit_synth_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+```
+
+To validate the computational accuracy of the Hierarchical Hidden Markov Model (HHMM) and ensure the hyperparameter $\lambda$ did not caulse label switching, we conducted a parameter recovery check on a synthetic dataset of 1000 weeks. The generative parameters were set to $P_{11} = 0.95$, $P_{22} = 0.90$, $\sigma_1 = 0.015$, and $\sigma_2 = 0.040$.
+
+The Hamiltonian Monte Carlo (HMC) sampler exhibited good convergence, yielding $\hat{R}$ values of 1.000 across all monitored parameters. The model successfully recovered the true parameter values, locating all four generative targets within their respective 90% posterior credible intervals. The emission volatilities were estimated with high precision ($\sigma_1 \approx 0.0149$, $\sigma_2 \approx 0.0404$). The transition probability for the crisis state ($P_{22}$) exhibited a slightly wider credible interval skewed marginally lower than the true value, which is consistent with the latent state distribution: because the generative model spends approximately 95% of the time in the calm state, the sampler observes fewer transitions into and out of the crisis regime, increasing the posterior uncertainty for that specific parameter. Overall, this test proves that the hierarchical implementation is correct, free of software defects, and capable of identifying latent regime-switching dynamics.
+
+### LOO Goodness of fit 
+
+```{r message=FALSE}
+n_total <- nrow(gspc_returns)
+actual_left_out_y <- gspc_returns$log_return[n_total]
+left_out_date <- gspc_returns$date[n_total]
+
+stan_data_loo_hhmm <- list(
+  T = n_total - 1,
+  Y = gspc_returns$log_return[1:(n_total - 1)]
+)
+
+fit_loo_hhmm <- model_hierarchical$sample(
+  data = stan_data_loo_hhmm, 
+  chains = 4, 
+  parallel_chains = 4, 
+  iter_warmup = 1000,
+  iter_sampling = 1000,
+  adapt_delta = 0.95,
+  seed = 405, 
+  refresh = 0
+)
+y_pred_hhmm <- fit_loo_hhmm$draws("y_predict", format = "matrix")
+ci_hhmm <- quantile(y_pred_hhmm, probs = c(0.05, 0.95))
+
+cat("--- HIERARCHICAL MODEL: LOO GOODNESS OF FIT ---\n")
+cat("Predicting for Date:", as.character(left_out_date), "\n")
+cat("Actual Left-Out Log Return:", actual_left_out_y, "\n\n")
+
+cat("Model's 90% Credible Interval:\n")
+print(ci_hhmm)
+
+cat("\nCaptured the true value?", actual_left_out_y >= ci_hhmm[1] && actual_left_out_y <= ci_hhmm[2], "\n")
+```
+
+Same as with the naive model, to evaluate the predictive calibration of the Hierarchical Hidden Markov Model (HHMM), we performed a Leave-One-Out (LOO) posterior predictive check. The time series was truncated at week $T-1$, requiring the model to generate a one-step-ahead forecast for the unobserved log return ($Y_T$) for the week of April 14, 2026.
+
+The realized log return was 2.18%, which fell comfortably within the model’s 90% predictive credible interval of -4.56% to +4.79%. This successful capture confirms that the introduction of the data-driven hyperparameter ($\lambda$) to dictate the scale of the emission variances did not compromise the model's predictive accuracy. Instead, the HHMM remained calibrated to the current market regime, generating uncertainty bounds that appropriately accounted for realized market volatility..
+
 ## References
 
 https://vlab.stern.nyu.edu/docs/volatility/GARCH

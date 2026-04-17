@@ -43,8 +43,8 @@ model {
   sigma_1 ~ exponential(1);
   sigma_diff ~ exponential(1);
 
-  P11 ~ beta(50, 2);
-  P22 ~ beta(20, 2);
+  P11 ~ beta(1, 1);
+  P22 ~ beta(1, 1);
 
   target += log_sum_exp(log_alpha_full[T, 1], log_alpha_full[T, 2]);
 }

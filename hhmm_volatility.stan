@@ -55,6 +55,12 @@ generated quantities {
   matrix[T, 2] log_beta;
   matrix[T, 2] log_gamma;
   vector[T] prob_crisis;
+  
+  real y_predict;
+  real p_state1_T;
+  real p_state2_T;
+  real p_state1_next;
+  int predicted_state;
 
   for (j in 1:2) {
     log_beta[T, j] = 0.0;
@@ -78,4 +84,13 @@ generated quantities {
 
     prob_crisis[t] = exp(log_gamma[t, 2] - log_sum_exp(log_gamma[t, 1], log_gamma[t, 2]));
   }
+  
+  p_state1_T = exp(log_alpha_full[T, 1] - log_sum_exp(log_alpha_full[T, 1], log_alpha_full[T, 2]));
+  p_state2_T = exp(log_alpha_full[T, 2] - log_sum_exp(log_alpha_full[T, 1], log_alpha_full[T, 2]));
+  
+  p_state1_next = p_state1_T * P11 + p_state2_T * (1 - P22);
+  
+  predicted_state = bernoulli_rng(1 - p_state1_next) + 1; 
+  
+  y_predict = normal_rng(0, sigma[predicted_state]);
 }
