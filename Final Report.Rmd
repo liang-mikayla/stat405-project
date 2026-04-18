@@ -333,19 +333,18 @@ fit_vi_hmm <- model_hmm$variational(
 ```
 
 ``` {r}
-prob_crisis_draws_vi <- fit_vi_hmm$draws("prob_crisis", format = "matrix")
-mean_prob_crisis_vi <- colMeans(prob_crisis_draws_vi)
+prob_crisis_draws_vi_hier <- fit_vi_hmm$draws("prob_crisis", format = "matrix")
+mean_prob_crisis_vi_hier <- colMeans(prob_crisis_draws_vi_hier)
 
 data.frame(
   date = gspc_returns$date,
-  prob = mean_prob_crisis_vi
+  prob = mean_prob_crisis_vi_hier
 ) %>%
   ggplot(aes(x = date, y = prob)) +
   geom_line(color = "steelblue") +
   theme_minimal() +
   labs(
-    title = "Smoothed Probability of Market Crisis Regime (Variational Inference)",
-    subtitle = expression("Posterior Mean of " * P(X[t] == Crisis ~ "|" ~ Y["1:T"])),
+    title = "Probability of Market Crisis Regime (Variational Inference)",
     x = "Date",
     y = "Probability"
   )
@@ -417,7 +416,7 @@ stan_data_hierarchical <- list(
   Y = returns$log_return 
 )
 
-fit_hierarchical <- model_hierarchical$sample(
+fit_hmc_hhmm <- model_hierarchical$sample(
   data = stan_data_hierarchical,
   chains = 4,
   parallel_chains = 4,
@@ -430,7 +429,7 @@ fit_hierarchical <- model_hierarchical$sample(
 ```
 
 ```{r}
-prob_crisis_draws_heir <- fit_hierarchical$draws("prob_crisis", format = "matrix")
+prob_crisis_draws_heir <- fit_hmc_hhmm$draws("prob_crisis", format = "matrix")
 
 mean_prob_crisis_heir <- colMeans(prob_crisis_draws_heir)
 
@@ -448,7 +447,7 @@ data.frame(
     y = "Probability"
   )
 
-as.data.frame(fit_hierarchical$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+as.data.frame(fit_hmc_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 
 ```
 
@@ -459,11 +458,11 @@ Similar to ou more simple model, the results for the hierarchical Hidden Markov 
 ```{r}
 params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2")
 
-mcmc_trace(fit_hierarchical$draws(params_hhmm)) +
+mcmc_trace(fit_hmc_hhmm$draws(params_hhmm)) +
   ggtitle("Trace Plots: Hierarchical HMM") +
   theme_minimal()
 
-mcmc_rank_hist(fit_hierarchical$draws(params_hhmm)) +
+mcmc_rank_hist(fit_hmc_hhmm$draws(params_hhmm)) +
   ggtitle("Rank Histograms: Hierarchical HMM") +
   theme_minimal()
 ```
@@ -583,8 +582,29 @@ fit_vi_hhmm <- model_hierarchical$variational(
   output_samples = 1000,
   refresh = 0
 )
-
 ```
+
+``` {r}
+prob_crisis_draws_vi_hier <- fit_vi_hhmm$draws("prob_crisis", format = "matrix")
+mean_prob_crisis_vi_hier <- colMeans(prob_crisis_draws_vi_hier)
+
+data.frame(
+  date = gspc_returns$date,
+  prob = mean_prob_crisis_vi_hier
+  ) %>%
+  ggplot(aes(x = date, y = prob)) +
+  geom_line(color = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Probability of Market Crisis Regime (Hierarchical Model)",
+    x = "Date",
+    y = "Probability"
+  )
+
+as.data.frame(fit_vi_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+```
+
+TODO: [Insert Comparison for HHMM]
 
 ## Notes for Discussion
 
