@@ -25,44 +25,15 @@ Stock market volatility poses significant challenges for investors, particularly
 
 To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by introducing a hierarchical structure to the emission variances. Instead of relying on rigid, fixed priors that are highly sensitive to the scale of log returns, the HHMM utilizes a data-driven hyperparameter to dictate the rate of volatility. This flexible structure allows the model to better accommodate the "fat tails" in financial data, preventing single-week outliers from hijacking the latent state estimation and producing much more accurate, sustained regime probabilities. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
 
-The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility.
+The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. Additional exploration of other tickers is contained int the Appendix.
 
-## Literature Review
+## TODO: Literature Review
 
-The rest of this study is outlined as follows. Section I describes the method of data collection and applied transformations. Section II defines the structure of our two Bayesian models and the inferential methods used for the analysis. Section III is an application of the methods to our data. 
+The rest of this study is outlined as follows. Section I describes the method of data collection and applied transformations. Section II defines the structure of our two Bayesian models and introduces the inferential methods we will be using for the analysis. Section III contains the implementation of the discussed methods, building both the HMM and HHMM models.
 
 ## Section I: Methodology
 
-To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
-
-
-```{r}
-project_tickers <- c("^GSPC", "^VIX", "XLK", "XLF", "TLT")
-market_data <- tq_get(project_tickers,
-                      get  = "stock.prices",
-                      from = "1998-01-01")
-
-weekly_returns <- market_data %>%
-  mutate(week = floor_date(date, "week")) %>%
-  group_by(symbol, week) %>%
-  arrange(date) %>%
-  slice_tail(n = 1) %>%
-  ungroup()
-  
-  
-weekly_log_returns <- weekly_returns %>%
-  group_by(symbol) %>%
-  arrange(date) %>%
-  mutate(
-    previous_price = lag(adjusted),
-    log_return = log(adjusted / previous_price)
-  ) %>%
-  filter(!is.na(log_return)) %>%
-  select(symbol, date, adjusted, log_return)
-
-head(weekly_log_returns)
-```
-
+To reduce the computational burden while preserving essential volatility clustering, the daily S&P500 data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. These weekly prices will then be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
 ## Section II: Hidden Markov Model
 
@@ -97,104 +68,72 @@ $$P_{22} \sim \text{Beta}(1, 1)$$
 
 We chose uniformative priors to keep the model more simple.
 
-### The Marginalized Joint Likelihood
+### Hamiltonian Monte Carlo (HMC)
 
-Because Stan's Hamiltonian Monte Carlo (HMC) algorithm relies on continuous gradient calculations, it cannot directly sample discrete latent parameters. Consequently, we must apply Rao-Blackwellization by computing the marginal posterior, effectively summing out the discrete state sequence $X_{1:T}$. 
-
-Over the whole dataset, the brute-force marginalized joint likelihood requires summing over the two states $\{1, 2\}$ for all $T$ weeks:
+Because Stan's Hamiltonian Monte Carlo (HMC) algorithm relies on continuous gradient calculations, it cannot directly sample discrete latent parameters. Consequently, computing the likelihood requires summing over the two states $\{1, 2\}$ for all $T$ weeks:
 
 $$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \sum_{x_2=1}^2 \dots \sum_{x_T=1}^2 p(Y_{1:T}, X_{1:T} = x_{1:T} | \theta, P)$$
 
-By factoring the joint distribution into the initial state probabilities $\pi$, the transition matrix $P$, and the state-dependent emission likelihoods, we obtain the fully expanded equation:
+The fully expanded equation involves exhaustive summations that requires computing the $\mathcal{O}(2^T)$ sum at every MCMC step. 
 
-$$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \dots \sum_{x_T=1}^2 \left[ \pi_{x_1} p(Y_1 | \mu_{x_1}, \sigma_{x_1}^2) \prod_{t=2}^T P_{x_{t-1}, x_t} p(Y_t | \mu_{x_t}, \sigma_{x_t}^2) \right]$$
+Given this approach is computationally expensive, we utilize Rao-Blackwellization Forward Algorithm to sum out the discrete state sequence $X_{1:T}$. The marginalization is computationally feasible through the Forward Algorithm, a method which exploits the Markov property to compute the marginal likelihood recursively in a single pass through the data. This method reduces the complexity from O(2T)\mathcal{O}(2^T) to \mathcal{O}(T). A full derivation of the Forward Algorithm and its log-space implementation is provided in the Appendix.
 
-This exhaustive summation involves $2^T$ unique possible paths. Computing this $\mathcal{O}(2^T)$ sum at every MCMC step is computationally expensive.
-
-### Rao-Blackwellization via the Forward Algorithm
-
-To resolve this computational bottleneck, we utilize the Forward Algorithm. The Forward Algorithm is a dynamic programming approach that relies on the conditional independence of the HMM. Instead of calculating the probability of every single distinct path from week 1 to week $T$ independently, the algorithm calculates the probability sequentially and caches the intermediate results. 
-
-Because the Markov property dictates that the future state depends only on the present state, we do not need to track how the market arrived at a certain state, only the accumulated probability mass of being there. We define a forward variable, $\alpha_t(j)$, representing the joint probability of observing the sequence of returns up to time $t$ and currently being in state $j$:
-
-$$\alpha_t(j) = p(Y_{1:t}, X_t = j | \theta, P)$$
-
-The algorithm computes this dynamically in three steps:
-
-#### 1. Base Case ($t = 1$):
-
-$$\alpha_1(j) = \pi_j p(Y_1 | 0, \sigma_j^2) \quad \text{for } j \in \{1, 2\}$$
-
-#### 2. Recursive Step ($t = 2, \dots, T$):
-
-By summing the cached probabilities from the previous week ($\alpha_{t-1}(i)$) and multiplying by the transition probability $P_{ij}$, we find the total probability of arriving at state $j$. We then multiply by the new emission likelihood:
-
-$$\alpha_t(j) = p(Y_t | 0, \sigma_j^2) \sum_{i=1}^2 \alpha_{t-1}(i) P_{ij}$$
-
-#### 3. Termination (Marginalized Likelihood):
-At the final week $T$, the algorithm has compressed the $2^T$ paths into just two values: $\alpha_T(1)$ and $\alpha_T(2)$, representing the joint probability of the entire dataset ending in State 1 and State 2, respectively. By the Law of Total Probability, since the market must end in one of these two mutually exclusive states, the final marginalized likelihood is simply their sum:
-
-$$L(\theta, P ; Y_{1:T}) = p(Y_{1:T} | \theta, P) = \sum_{j=1}^2 \alpha_T(j)$$
-
-This reduces the time complexity from $\mathcal{O}(2^T)$ to $\mathcal{O}(T)$.
-
-### Log-Space Implementation
-
-While the Forward Algorithm solves the theoretical complexity, implementing it directly may cause underflow. Multiplying hundreds of small probability values quickly results in a number smaller than a computer's floating-point limit (e.g., $10^{-308}$), causing the software to round the total likelihood to zero.
-
-To maintain numerical stability, Stan evaluates the marginalized posterior strictly in log-space. We define the log-forward variable as $\log \alpha_t(j)$.The base case becomes a simple addition:
-$$\log \alpha_1(j) = \log \pi_j + \log p(Y_1 | 0, \sigma_j^2)$$
-
-The recursive step requires taking the log of a sum, which Stan handles using the stable log_sum_exp function:
-
-$$\log \alpha_t(j) = \log p(Y_t | 0, \sigma_j^2) + \log \left( \sum_{i=1}^2 \exp(\log \alpha_{t-1}(i) + \log P_{ij}) \right)$$
-
-Finally, the total marginalized log-likelihood is the log-sum-exp of the final terminal states:
+Therefore the final marginalized log likelihood as computed as follows:
 
 $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) \right)$$
 
-### The Backward Algorithm and Smoothed Probabilities
+All computations are performed in log-space using Stan's numerically stable \texttt{log\_sum\_exp} function to prevent floating-point underflow.
 
-While the Forward algorithm successfully computes the marginalized likelihood required to fit the model, the latent state probabilities it generates are "filtered." The filtered probability, $P(X_t = j \mid Y_{1:t})$, estimates the current market regime using only the data available up to time $t$. Because financial markets are inherently noisy, relying solely on past and present data makes the model hyper-reactive. A single week of extreme volatility might cause the filtered probability to spike into a "Crisis" state, only to immediately revert the following week, failing to capture the sustained nature of true macroeconomic shifts.
+## Variational Inference
 
-To resolve this and accurately identify prolonged market regimes, we must evaluate the probability of the latent state given the *entire* sequence of observations, $P(X_t = j \mid Y_{1:T})$. This is known as the "smoothed" probability. To compute this, we introduce the Backward algorithm.
+We additionally fit both the HMM and HHMM using Variational Inference (VI). This approach is intended to evaluate the tradeoff between inferential accuracy and computational efficiency. Rather than sampling from the true posterior like HMC, VI reframes inference as an optimization problem. Specifically, we seek the distribution $q^*_\phi \in \mathscr{Q}$ that most closely approximates the true posterior $\pi(x)$, as measured by the KL divergence:
 
-Much like the Forward algorithm, the Backward algorithm is a dynamic programming approach, but it operates in reverse. We define the backward variable, $\beta_t(j)$, as the probability of observing all future data from $t+1$ to $T$, given that the market is currently in state $j$ at time $t$:
+$$q^*_\phi = \arg\min_{\phi} \text{KL}(q_\phi \| \pi)$$
 
-$$\beta_t(j) = p(Y_{t+1:T} \mid X_t = j, \theta, P)$$
+We adopt the meanfield variational family, which approximates the posterior using a 
+multivariate normal distribution with a diagonal covariance matrix.
 
-The algorithm computes this recursively starting from the end of the time series:
+## Section III: Implmentation of HMM
 
-#### 1. Base Case ($t = T$):
-We initialize the final backward variables to 1 (or 0 in log-space), as there are no future observations beyond $T$.
-$$\beta_T(j) = 1 \quad \text{for } j \in \{1, 2\}$$
+```{r}
+project_tickers <- c("^GSPC")
 
-#### 2. Recursive Step ($t = T-1, T-2, \dots, 1$):
-To compute the backward variable for week $t$, we sum over all possible states $i$ for the next week, multiplying the transition probability $P_{ji}$, the emission likelihood of tomorrow's observation, and tomorrow's cached backward variable:
-$$\beta_t(j) = \sum_{i=1}^2 P_{ji} p(Y_{t+1} \mid \mu_i, \sigma_i^2) \beta_{t+1}(i)$$
+market_data <- tq_get(project_tickers,
+                      get  = "stock.prices",
+                      from = "1998-01-01")
 
-#### 3. Computing the Smoothed Probabilities ($\gamma$):
-Once both the forward ($\alpha$) and backward ($\beta$) passes are complete, we combine them. By Bayes' Theorem and the conditional independence properties of the HMM, the joint probability of the entire dataset and being in state $j$ at time $t$ is simply the product of the two variables. We normalize this product to obtain $\gamma_t(j)$, the final smoothed probability:
+weekly_returns <- market_data %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(symbol, week) %>%
+  arrange(date) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+  
+weekly_log_returns <- weekly_returns %>%
+  group_by(symbol) %>%
+  arrange(date) %>%
+  mutate(
+    previous_price = lag(adjusted),
+    log_return = log(adjusted / previous_price)
+  ) %>%
+  filter(!is.na(log_return)) %>%
+  select(symbol, date, adjusted, log_return)
 
-$$\gamma_t(j) = P(X_t = j \mid Y_{1:T}) = \frac{\alpha_t(j) \beta_t(j)}{\sum_{i=1}^2 \alpha_t(i) \beta_t(i)}$$
-
-By incorporating the backward pass, the model gains the benefit of hindsight. It can look ahead at the future trajectory of the S&P 500 to determine whether a sudden drop was a brief, one-week anomaly or the beginning of a sustained structural crash like the 2008 Financial Crisis.
-
-## Implmentation of HMM
+head(weekly_log_returns)
+```
 
 ```{r message=FALSE}
 model_hmm <- cmdstan_model("hmm_volatility.stan")
 
-gspc_returns <- weekly_log_returns %>%
-  filter(symbol == "^GSPC") %>%
+returns <- weekly_log_returns %>%
   arrange(date)
 
 stan_data <- list(
-  T = nrow(gspc_returns),
-  Y = gspc_returns$log_return
+  T = nrow(returns),
+  Y = returns$log_return
 )
 
-fit_hmm <- model_hmm$sample(
+fit_hmc_hmm <- model_hmm$sample(
   data = stan_data,
   chains = 4,
   parallel_chains = 4,
@@ -207,16 +146,16 @@ fit_hmm <- model_hmm$sample(
 ```
 
 ```{r}
-prob_crisis_draws <- fit_hmm$draws("prob_crisis", format = "matrix")
+prob_crisis_draws <- fit_hmc_hmm$draws("prob_crisis", format = "matrix")
 
 mean_prob_crisis <- colMeans(prob_crisis_draws)
 
 data.frame(
-  date = gspc_returns$date,
+  date = returns$date,
   prob = mean_prob_crisis
 ) %>%
   ggplot(aes(x = date, y = prob)) +
-  geom_line(color = "firebrick") + # A distinct color for the smoothed probabilities
+  geom_line(color = "firebrick") +
   theme_minimal() +
   labs(
     title = "Smoothed Probability of Market Crisis Regime",
@@ -225,7 +164,7 @@ data.frame(
     y = "Probability"
   )
 
-as.data.frame(fit_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+as.data.frame(fit_hmc_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
 The baseline Hidden Markov Model successfully identified two distinct market regimes within the S&P 500 log returns. The normal growth state, represented by State 1, is characterized by low volatility of approximately 1.62% per week and exhibits extreme persistence. With $P_{11} \approx 0.970$, the model suggests a 97% probability of the market remaining in this stable environment week-over-week. Conversely, the crisis regime in State 2 shows a massive volatility jump to approximately 4.11% per week, which is roughly 2.5 times higher than the baseline. This regime has a slightly lower persistence of $P_{22} \approx 0.909$, which reflects that while financial panics are intensely volatile, they are typically shorter-lived than prolonged periods of normal market growth.
@@ -235,20 +174,21 @@ The baseline Hidden Markov Model successfully identified two distinct market reg
 ```{r}
 params_naive <- c("P11", "P22", "sigma_1", "sigma_2")
 
-mcmc_trace(fit_hmm$draws(params_naive)) +
+mcmc_trace(fit_hmc_hmm$draws(params_naive)) +
   ggtitle("Trace Plots: Naive HMM") +
   theme_minimal()
 
-mcmc_rank_hist(fit_hmm$draws(params_naive)) +
+mcmc_rank_hist(fit_hmc_hmm$draws(params_naive)) +
   ggtitle("Rank Histograms: Naive HMM") +
   theme_minimal() 
 ```
+
 ### Correctness Check With Synthetic Data Model 1
 
 ```{r message=FALSE}
 set.seed(405)
 n_sims <- 100
-T_sim <- nrow(gspc_returns) 
+T_sim <- nrow(returns) 
 true_mu <- 0
 true_sigma <- c(0.015, 0.040)
 true_P <- matrix(c(0.95, 0.05, 0.10, 0.90), nrow = 2, byrow = TRUE)
@@ -305,7 +245,7 @@ To validate the computational correctness of our baseline model, we performed a 
 ### Leave One Out Goodness of Fit Check HMM Model
 
 ```{r message = FALSE}
-subset_returns <- tail(gspc_returns, 300) 
+subset_returns <- tail(returns, 300) 
 n_total_subset <- nrow(subset_returns)
 test_weeks <- 50 
 
@@ -386,11 +326,58 @@ Regarding the potential limitations of the model, we thought that prior sensitiv
 fit_vi_hmm <- model_hmm$variational(
   data = stan_data,
   seed = 405,
-  refresh = 0,
   algorithm = "meanfield",
-  output_samples = 1000
+  output_samples = 1000,
+  refresh = 0
 )
+```
 
+``` {r}
+prob_crisis_draws_vi_hier <- fit_vi_hmm$draws("prob_crisis", format = "matrix")
+mean_prob_crisis_vi_hier <- colMeans(prob_crisis_draws_vi_hier)
+
+data.frame(
+  date = gspc_returns$date,
+  prob = mean_prob_crisis_vi_hier
+) %>%
+  ggplot(aes(x = date, y = prob)) +
+  geom_line(color = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Probability of Market Crisis Regime (Variational Inference)",
+    x = "Date",
+    y = "Probability"
+  )
+
+as.data.frame(fit_vi_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+```
+
+```{r}
+# code modified from "Advanced Inference - VI with Stan" lecture
+sel <- c("P11", "P22", "sigma_1", "sigma_2")
+
+data_hmc <- mcmc_intervals_data(fit_hmm$draws(variables = sel)) %>%
+  mutate(method = "HMC")
+
+data_vi <- mcmc_intervals_data(fit_vi_hmm$draws(variables = sel)) %>%
+  mutate(method = "Variational")
+
+bind_rows(data_hmc, data_vi) %>%
+  ggplot(aes(x = m, y = method, color = method)) +
+  geom_linerange(aes(xmin = ll, xmax = hh),
+                 position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(xmin = l, xmax = h),
+                 position = position_dodge(width = 0.5), linewidth = 1.5) +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  facet_wrap(~parameter, scales = "free_x", ncol = 2) +
+  theme_minimal() +
+  labs(
+    title = "HMM: HMC vs Variational Inference",
+    subtitle = "Outer lines = 95% CI, inner lines = 80% CI",
+    x = "Estimate",
+    y = NULL,
+    color = "Method"
+  )
 ```
 
 ## Hierarchical Hidden Markov Model (Model 2)
@@ -425,11 +412,11 @@ The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because it is 
 model_hierarchical <- cmdstan_model("hhmm_volatility.stan")
 
 stan_data_hierarchical <- list(
-  T = nrow(gspc_returns),
-  Y = gspc_returns$log_return 
+  T = nrow(returns),
+  Y = returns$log_return 
 )
 
-fit_hierarchical <- model_hierarchical$sample(
+fit_hmc_hhmm <- model_hierarchical$sample(
   data = stan_data_hierarchical,
   chains = 4,
   parallel_chains = 4,
@@ -442,12 +429,12 @@ fit_hierarchical <- model_hierarchical$sample(
 ```
 
 ```{r}
-prob_crisis_draws_heir <- fit_hierarchical$draws("prob_crisis", format = "matrix")
+prob_crisis_draws_heir <- fit_hmc_hhmm$draws("prob_crisis", format = "matrix")
 
 mean_prob_crisis_heir <- colMeans(prob_crisis_draws_heir)
 
 data.frame(
-  date = gspc_returns$date,
+  date = returns$date,
   prob = mean_prob_crisis_heir
 ) %>%
   ggplot(aes(x = date, y = prob)) +
@@ -460,7 +447,7 @@ data.frame(
     y = "Probability"
   )
 
-as.data.frame(fit_hierarchical$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+as.data.frame(fit_hmc_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 
 ```
 
@@ -471,11 +458,11 @@ Similar to ou more simple model, the results for the hierarchical Hidden Markov 
 ```{r}
 params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2")
 
-mcmc_trace(fit_hierarchical$draws(params_hhmm)) +
+mcmc_trace(fit_hmc_hhmm$draws(params_hhmm)) +
   ggtitle("Trace Plots: Hierarchical HMM") +
   theme_minimal()
 
-mcmc_rank_hist(fit_hierarchical$draws(params_hhmm)) +
+mcmc_rank_hist(fit_hmc_hhmm$draws(params_hhmm)) +
   ggtitle("Rank Histograms: Hierarchical HMM") +
   theme_minimal()
 ```
@@ -535,7 +522,7 @@ To evaluate the computational correctness of the Hierarchical Hidden Markov Mode
 ### LOO Goodness of fit 
 
 ```{r message=FALSE}
-subset_returns_hhmm <- tail(gspc_returns, 300) 
+subset_returns_hhmm <- tail(returns, 300) 
 n_total_subset_hhmm <- nrow(subset_returns_hhmm)
 test_weeks_hhmm <- 50 
 
@@ -595,8 +582,29 @@ fit_vi_hhmm <- model_hierarchical$variational(
   output_samples = 1000,
   refresh = 0
 )
-
 ```
+
+``` {r}
+prob_crisis_draws_vi_hier <- fit_vi_hhmm$draws("prob_crisis", format = "matrix")
+mean_prob_crisis_vi_hier <- colMeans(prob_crisis_draws_vi_hier)
+
+data.frame(
+  date = gspc_returns$date,
+  prob = mean_prob_crisis_vi_hier
+  ) %>%
+  ggplot(aes(x = date, y = prob)) +
+  geom_line(color = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Probability of Market Crisis Regime (Hierarchical Model)",
+    x = "Date",
+    y = "Probability"
+  )
+
+as.data.frame(fit_vi_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+```
+
+TODO: [Insert Comparison for HHMM]
 
 ## Notes for Discussion
 
@@ -640,6 +648,33 @@ To validate the accuracy of our approach, we may utilize the CBOE Volatility Ind
 ## EDA
 
 ```{r}
+project_tickers <- c("^GSPC", "^VIX", "XLK", "XLF", "TLT")
+market_data <- tq_get(project_tickers,
+                      get  = "stock.prices",
+                      from = "1998-01-01")
+
+weekly_returns <- market_data %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(symbol, week) %>%
+  arrange(date) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+  
+  
+weekly_log_returns <- weekly_returns %>%
+  group_by(symbol) %>%
+  arrange(date) %>%
+  mutate(
+    previous_price = lag(adjusted),
+    log_return = log(adjusted / previous_price)
+  ) %>%
+  filter(!is.na(log_return)) %>%
+  select(symbol, date, adjusted, log_return)
+
+head(weekly_log_returns)
+```
+
+```{r}
 market_data %>%
   filter(symbol %in% c("^GSPC", "^VIX")) %>%
   ggplot(aes(x = date, y = adjusted, color = symbol)) +
@@ -656,3 +691,83 @@ market_data %>%
 The visualization highlights a clear inverse correlation: significant price contractions in the S&P 500 ($^GSPC$) correspond directly to sharp spikes in the VIX. These synchronized movements clearly mark the three major structural shocks identified in our proposal. The abrupt, vertical nature of these volatility surges visually mimics discrete state transitions, reinforcing our decision to utilize a Hidden Markov Model (HMM).
 
 Furthermore, the raw S&P 500 series exhibits a distinct upward trend over the 25-year period, indicating it is non-stationary. By transforming these prices into weekly log returns, $Y_{t}=\ln(P_{t}/P_{t-1})$, we remove this drift and stabilize the variance. This transformation is mathematically critical; it ensures our HMM operates on a stationary distribution, which is a necessary condition for the model to reliably infer the "Calm" and "Crisis" latent states over the long term.
+
+## Rao-Blackwellization via the Forward Algorithm
+
+Over the whole dataset, the brute-force marginalized joint likelihood requires summing over the two states $\{1, 2\}$ for all $T$ weeks:
+
+$$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \sum_{x_2=1}^2 \dots \sum_{x_T=1}^2 p(Y_{1:T}, X_{1:T} = x_{1:T} | \theta, P)$$
+By factoring the joint distribution into the initial state probabilities $\pi$, the transition matrix $P$, and the state-dependent emission likelihoods, we obtain the fully expanded equation:
+
+$$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \dots \sum_{x_T=1}^2 \left[ \pi_{x_1} p(Y_1 | \mu_{x_1}, \sigma_{x_1}^2) \prod_{t=2}^T P_{x_{t-1}, x_t} p(Y_t | \mu_{x_t}, \sigma_{x_t}^2) \right]$$
+
+This exhaustive summation involves $2^T$ unique possible paths. Computing this $\mathcal{O}(2^T)$ sum at every MCMC step is computationally expensive.
+
+To resolve this computational bottleneck, we utilize the Forward Algorithm. The Forward Algorithm is a dynamic programming approach that relies on the conditional independence of the HMM. Instead of calculating the probability of every single distinct path from week 1 to week $T$ independently, the algorithm calculates the probability sequentially and caches the intermediate results. 
+
+Because the Markov property dictates that the future state depends only on the present state, we do not need to track how the market arrived at a certain state, only the accumulated probability mass of being there. We define a forward variable, $\alpha_t(j)$, representing the joint probability of observing the sequence of returns up to time $t$ and currently being in state $j$:
+
+$$\alpha_t(j) = p(Y_{1:t}, X_t = j | \theta, P)$$
+
+The algorithm computes this dynamically in three steps:
+
+#### 1. Base Case ($t = 1$):
+
+$$\alpha_1(j) = \pi_j p(Y_1 | 0, \sigma_j^2) \quad \text{for } j \in \{1, 2\}$$
+
+#### 2. Recursive Step ($t = 2, \dots, T$):
+
+By summing the cached probabilities from the previous week ($\alpha_{t-1}(i)$) and multiplying by the transition probability $P_{ij}$, we find the total probability of arriving at state $j$. We then multiply by the new emission likelihood:
+
+$$\alpha_t(j) = p(Y_t | 0, \sigma_j^2) \sum_{i=1}^2 \alpha_{t-1}(i) P_{ij}$$
+
+#### 3. Termination (Marginalized Likelihood):
+At the final week $T$, the algorithm has compressed the $2^T$ paths into just two values: $\alpha_T(1)$ and $\alpha_T(2)$, representing the joint probability of the entire dataset ending in State 1 and State 2, respectively. By the Law of Total Probability, since the market must end in one of these two mutually exclusive states, the final marginalized likelihood is simply their sum:
+
+$$L(\theta, P ; Y_{1:T}) = p(Y_{1:T} | \theta, P) = \sum_{j=1}^2 \alpha_T(j)$$
+
+This reduces the time complexity from $\mathcal{O}(2^T)$ to $\mathcal{O}(T)$.
+
+### Log-Space Implementation
+
+While the Forward Algorithm solves the theoretical complexity, implementing it directly may cause underflow. Multiplying hundreds of small probability values quickly results in a number smaller than a computer's floating-point limit (e.g., $10^{-308}$), causing the software to round the total likelihood to zero.
+
+To maintain numerical stability, Stan evaluates the marginalized posterior strictly in log-space. We define the log-forward variable as $\log \alpha_t(j)$.The base case becomes a simple addition:
+$$\log \alpha_1(j) = \log \pi_j + \log p(Y_1 | 0, \sigma_j^2)$$
+
+The recursive step requires taking the log of a sum, which Stan handles using the stable log_sum_exp function:
+
+$$\log \alpha_t(j) = \log p(Y_t | 0, \sigma_j^2) + \log \left( \sum_{i=1}^2 \exp(\log \alpha_{t-1}(i) + \log P_{ij}) \right)$$
+
+Finally, the total marginalized log-likelihood is the log-sum-exp of the final terminal states:
+
+$$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) \right)$$
+
+### The Backward Algorithm and Smoothed Probabilities
+
+While the Forward algorithm successfully computes the marginalized likelihood required to fit the model, the latent state probabilities it generates are "filtered." The filtered probability, $P(X_t = j \mid Y_{1:t})$, estimates the current market regime using only the data available up to time $t$. Because financial markets are inherently noisy, relying solely on past and present data makes the model hyper-reactive. A single week of extreme volatility might cause the filtered probability to spike into a "Crisis" state, only to immediately revert the following week, failing to capture the sustained nature of true macroeconomic shifts.
+
+To resolve this and accurately identify prolonged market regimes, we must evaluate the probability of the latent state given the *entire* sequence of observations, $P(X_t = j \mid Y_{1:T})$. This is known as the "smoothed" probability. To compute this, we introduce the Backward algorithm.
+
+Much like the Forward algorithm, the Backward algorithm is a dynamic programming approach, but it operates in reverse. We define the backward variable, $\beta_t(j)$, as the probability of observing all future data from $t+1$ to $T$, given that the market is currently in state $j$ at time $t$:
+
+$$\beta_t(j) = p(Y_{t+1:T} \mid X_t = j, \theta, P)$$
+
+The algorithm computes this recursively starting from the end of the time series:
+
+#### 1. Base Case ($t = T$):
+We initialize the final backward variables to 1 (or 0 in log-space), as there are no future observations beyond $T$.
+$$\beta_T(j) = 1 \quad \text{for } j \in \{1, 2\}$$
+
+#### 2. Recursive Step ($t = T-1, T-2, \dots, 1$):
+To compute the backward variable for week $t$, we sum over all possible states $i$ for the next week, multiplying the transition probability $P_{ji}$, the emission likelihood of tomorrow's observation, and tomorrow's cached backward variable:
+$$\beta_t(j) = \sum_{i=1}^2 P_{ji} p(Y_{t+1} \mid \mu_i, \sigma_i^2) \beta_{t+1}(i)$$
+
+#### 3. Computing the Smoothed Probabilities ($\gamma$):
+Once both the forward ($\alpha$) and backward ($\beta$) passes are complete, we combine them. By Bayes' Theorem and the conditional independence properties of the HMM, the joint probability of the entire dataset and being in state $j$ at time $t$ is simply the product of the two variables. We normalize this product to obtain $\gamma_t(j)$, the final smoothed probability:
+
+$$\gamma_t(j) = P(X_t = j \mid Y_{1:T}) = \frac{\alpha_t(j) \beta_t(j)}{\sum_{i=1}^2 \alpha_t(i) \beta_t(i)}$$
+
+By incorporating the backward pass, the model gains the benefit of hindsight. It can look ahead at the future trajectory of the S&P 500 to determine whether a sudden drop was a brief, one-week anomaly or the beginning of a sustained structural crash like the 2008 Financial Crisis.
+
+
