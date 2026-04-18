@@ -184,7 +184,7 @@ $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) 
 
 ### The Backward Algorithm and Smoothed Probabilities
 
-While the Forward algorithm successfully computes the marginalized likelihood required to fit the model, the latent state probabilities it generates are strictly "filtered." The filtered probability, $P(X_t = j \mid Y_{1:t})$, estimates the current market regime using only the data available up to time $t$. Because financial markets are inherently noisy, relying solely on past and present data makes the model hyper-reactive. A single week of extreme volatility might cause the filtered probability to spike into a "Crisis" state, only to immediately revert the following week, failing to capture the sustained nature of true macroeconomic shifts.
+While the Forward algorithm successfully computes the marginalized likelihood required to fit the model, the latent state probabilities it generates are "filtered." The filtered probability, $P(X_t = j \mid Y_{1:t})$, estimates the current market regime using only the data available up to time $t$. Because financial markets are inherently noisy, relying solely on past and present data makes the model hyper-reactive. A single week of extreme volatility might cause the filtered probability to spike into a "Crisis" state, only to immediately revert the following week, failing to capture the sustained nature of true macroeconomic shifts.
 
 To resolve this and accurately identify prolonged market regimes, we must evaluate the probability of the latent state given the *entire* sequence of observations, $P(X_t = j \mid Y_{1:T})$. This is known as the "smoothed" probability. To compute this, we introduce the Backward algorithm.
 
@@ -212,7 +212,6 @@ By incorporating the backward pass, the model gains the benefit of hindsight. It
 ## Implmentation of HMM
 
 ```{r message=FALSE}
-
 model_hmm <- cmdstan_model("hmm_volatility.stan")
 
 gspc_returns <- weekly_log_returns %>%
@@ -272,89 +271,121 @@ mcmc_rank_hist(fit_hmm$draws(params_naive)) +
 ```
 ### Correctness Check With Synthetic Data Model 1
 
-```{r}
-# 1. Simulate the Fake Market
+```{r message=FALSE}
 set.seed(405)
-T_sim <- 1000
+n_sims <- 100
+T_sim <- nrow(gspc_returns) 
 true_mu <- 0
 true_sigma <- c(0.015, 0.040)
-true_P <- matrix(c(0.95, 0.05, 
-                   0.10, 0.90), nrow = 2, byrow = TRUE)
+true_P <- matrix(c(0.95, 0.05, 0.10, 0.90), nrow = 2, byrow = TRUE)
 
-true_states <- numeric(T_sim)
-true_states[1] <- 1
-for (t in 2:T_sim) {
-  true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ])
-}
-
-simulated_Y <- numeric(T_sim)
-for (t in 1:T_sim) {
-  simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]])
-}
-
-# 2. Package it and Fit the Naive Model
-stan_data_synthetic <- list(
-  T = T_sim,
-  Y = simulated_Y
+coverage_results <- data.frame(
+  P11_captured = logical(n_sims),
+  P22_captured = logical(n_sims),
+  sigma1_captured = logical(n_sims),
+  sigma2_captured = logical(n_sims)
 )
 
-fit_synth_hmm <- model_hmm$sample(
-  data = stan_data_synthetic, 
-  chains = 4, 
-  parallel_chains = 4, 
-  seed = 405, 
-  refresh = 0
-)
+cat("Starting 100 simulations... This will take a few minutes.\n")
 
-# 3. Verify Parameter Recovery
-cat("--- NAIVE MODEL: SYNTHETIC PARAMETER RECOVERY ---\n")
-cat("Target Values -> P11: 0.95 | P22: 0.90 | sigma_1: 0.015 | sigma_2: 0.040\n\n")
-fit_synth_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2"))
+for (i in 1:n_sims) {
+  true_states <- numeric(T_sim)
+  true_states[1] <- 1
+  for (t in 2:T_sim) {
+    true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ])
+  }
+  
+  simulated_Y <- numeric(T_sim)
+  for (t in 1:T_sim) {
+    simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]])
+  }
+  
+  fit_sim <- model_hmm$sample(
+    data = list(T = T_sim, Y = simulated_Y), 
+    chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE
+  )
+  
+  draws <- fit_sim$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix")
+  cis <- apply(draws, 2, quantile, probs = c(0.05, 0.95))
+  
+  coverage_results$P11_captured[i] <- true_P[1,1] >= cis[1, "P11"] && true_P[1,1] <= cis[2, "P11"]
+  coverage_results$P22_captured[i] <- true_P[2,2] >= cis[1, "P22"] && true_P[2,2] <= cis[2, "P22"]
+  coverage_results$sigma1_captured[i] <- true_sigma[1] >= cis[1, "sigma_1"] && true_sigma[1] <= cis[2, "sigma_1"]
+  coverage_results$sigma2_captured[i] <- true_sigma[2] >= cis[1, "sigma_2"] && true_sigma[2] <= cis[2, "sigma_2"]
+  
+  if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n")
+}
+
+cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
+print(colMeans(coverage_results))
 ```
-To verify the mathematical correctness of our Stan implementation and rule out software defects, we performed a parameter recovery check using a synthetic dataset of 1000 weeks. The "true" market parameters were predefined as $P_{11} = 0.95$, $P_{22} = 0.90$, $\sigma_1 = 0.015$, and $\sigma_2 = 0.040$.
 
-The model successfully recovered all four target parameters, with the true simulation values falling comfortably within their respective 90% credible intervals (between the q5 and q95 bounds). Notably, the posterior standard deviations for the emission volatilities are incredibly narrow ($0.0006$ and $0.0018$), showing that the sampler was very confident in its estimates.
+```{r}
+cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
+print(colMeans(coverage_results))
+```
+
+To validate computational correctness of our baseline Hidden Markov Model and rule out software defects, we performed a Simulation-Based Calibration (SBC) across 100 synthetic datasets. To ensure the calibration accurately reflected our empirical application, each synthetic time series was simulated to match the full length of the S&P 500 dataset ($T \approx 1300$), with generative parameters set to $P_{11} = 0.95$, $P_{22} = 0.90$, $\sigma_1 = 0.015$, and $\sigma_2 = 0.040$.
+
+For each of the 100 simulations, we fitted the model and extracted the 90% posterior credible intervals. A correctly implemented model should capture the true generative parameters in its 90% credible intervals approximately 90% of the time. The empirical coverage proportions were 0.96 for $P_{11}$, 0.97 for $P_{22}$, 0.97 for $\sigma_1$, and 0.96 for $\sigma_2$. This over-coverage indicates that the model's posterior intervals are conservative, but highly robust. Most importantly, it proves that the implementation are mathematically sound and free of software defects.
+
 
 ### Leave One Out Goodness of Fit Check HMM Model
 
-```{r}
+```{r message = FALSE}
+subset_returns <- tail(gspc_returns, 300) 
+n_total_subset <- nrow(subset_returns)
+test_weeks <- 50 
 
-n_total <- nrow(gspc_returns)
-actual_left_out_y <- gspc_returns$log_return[n_total]
-left_out_date <- gspc_returns$date[n_total]
+results_list <- list()
 
-stan_data_loo <- list(
-  T = n_total - 1,
-  Y = gspc_returns$log_return[1:(n_total - 1)]
-)
+cat("Starting 50 rolling LOO predictions...\n")
 
-fit_loo_hmm <- model_hmm$sample(
-  data = stan_data_loo, 
-  chains = 4, 
-  parallel_chains = 4, 
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  seed = 405, 
-  refresh = 0
-)
+for (i in test_weeks:1) {
+  current_T <- n_total_subset - i
+  actual_y <- subset_returns$log_return[current_T + 1]
+  
+  # Package the truncated data up to current_T
+  stan_data_loo <- list(
+    T = current_T,
+    Y = subset_returns$log_return[1:current_T]
+  )
+  
+  # Fit the model
+  fit_loop <- model_hmm$sample(
+    data = stan_data_loo, 
+    chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE
+  )
+  
+  # Extract prediction and calculate 90% CI
+  y_pred <- fit_loop$draws("y_predict", format = "matrix")
+  ci <- quantile(y_pred, probs = c(0.05, 0.95))
+  
+  inside <- actual_y >= ci[1] && actual_y <= ci[2]
+  
+  results_list[[length(results_list) + 1]] <- data.frame(
+    Date = subset_returns$date[current_T + 1],
+    Actual = actual_y,
+    CI_Lower = ci[1],
+    CI_Upper = ci[2],
+    Captured = inside
+  )
+  
+  if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n")
+}
 
-y_pred_hmm <- fit_loo_hmm$draws("y_predict", format = "matrix")
+merged_loo_df <- do.call(rbind, results_list)
+proportion_covered <- mean(merged_loo_df$Captured)
 
-ci_hmm <- quantile(y_pred_hmm, probs = c(0.05, 0.95))
-
-cat("--- NAIVE MODEL: LOO GOODNESS OF FIT ---\n")
-cat("Predicting for Date:", as.character(left_out_date), "\n")
-cat("Actual Left-Out Log Return:", actual_left_out_y, "\n\n")
-
-cat("Model's 90% Credible Interval:\n")
-print(ci_hmm)
-
-cat("\nCaptured the true value?", actual_left_out_y >= ci_hmm[1] && actual_left_out_y <= ci_hmm[2], "\n")
+cat("\n--- MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
+cat("Proportion of true values inside the 90% CI:", proportion_covered, "\n")
 ```
 
-To evaluate the predictive performance of the Naive HMM, we performed a posterior predictive check using a Leave-One-Out (LOO) methodology. We truncated the time series at week $T-1$ and required the model to forecast the unobserved log return ($Y_T$) for the week of April 14, 2026, using its learned posterior parameters.
+To check the goodness of fit and out-of-sample prediction of the baseline model, we expanded our posterior predictive check to a rolling Leave-One-Out (LOO) cross-validation over a 50-week period. We chose a 50-week period in order to keep the computational times lower. To preserve the sequential dependence of the Hidden Markov Model, we iteratively truncated the time series at a moving boundary $t$, requiring the model to generate a one-step-ahead forecast for week $t+1$ using only strictly historical data (where $t$ ranges over the final 50 weeks of our dataset, terminating at $T-1$).
 
-The predicted log return was 2.18%, which fell within the model’s 90% credible interval of -4.52% to +4.56%. This successful capture indicates that the model is well-specified for the current market regime and is providing reliable, calibrated uncertainty estimates for out-of-sample data.
+For each of the 50 iterations, we computed the 90% posterior predictive credible interval for the unobserved log return. Our results yielded a coverage proportion of 0.94 (capturing 47 of the 50 out-of-sample weeks).
+
+The uncertainty bounds generated by the $\text{Exponential}(1)$ prior and Normal emission distributions were wide enough to account for the realized market volatility over the 50-week test period. This confirms that the baseline HMM does not suffer from gross mis-specification during standard market regimes and provides reliable predictive bounds for near-term forecasting.
 
 ### Model 1 (Naive HMM) Results & Discussion
 
@@ -373,13 +404,16 @@ The predicted log return was 2.18%, which fell within the model’s 90% credible
 * We would expect states of the markets to be persisten (i.e., P11, P22 to have higher values). 
 * Using the exponential 1 rigid prior for the market volatilities may be restricting the model. 
 
+We started by just using the forward algorithm to calculate "filtered" probabilities. Because this method only looks at past and present data, it was way too reactive; the model basically panicked at every little market dip, giving us very jittery results instead of identifying actual, long-term crisis periods. To smooth out the jitter, we added the backward algorithm to calculate "smoothed" probabilities, drawing on concepts from Rabiner (1989) and a 2020 MDPI paper. The goal here was to let the model look at the entire timeline of data at once. With the benefit of hindsight, we hoped it would realize that massive crashes (like 2008) are sustained events, not just random one-week hiccups. The backward pass seemed to make this issue a lot better. 
+
+Regarding the potential limitations of the model, we thought that prior sensitivity may be a thing, especially for market volatility. We would generally expect the states of the markets to be persistent, meaning parameters like $P_{11}$ and $P_{22}$ should have higher values. Because of this, using the rigid exponential(1) prior for the market volatilities may be actively restricting the model.
 
 
 ## Hierarchical Hidden Markov Model (Model 2)
 
-While our baseline HMM successfully captures discrete regime shifts, relying on fixed hyper-parameters (such as $\sigma_i \sim \text{Exponential}(1)$) introduces a vulnerability: the posterior may be overly sensitive to these rigid prior assumptions. To mitigate this and capture the true scale of market volatility driven by the data, we introduce a Hierarchical Hidden Markov Model (HHMM). 
+While our baseline HMM successfully captures discrete regime shifts, relying on fixed parameters (such as $\sigma_i \sim \text{Exponential}(1)$) introduces a vulnerability: the posterior may be overly sensitive to these rigid prior assumptions. To mitigate this and capture the true scale of market volatility driven by the data, we introduce a Hierarchical Hidden Markov Model (HHMM). 
 
-Because weekly log returns are practically indistinguishable from zero and a "crisis" is defined primarily by an explosion in variance rather than a shift in the mean, we simplify the emission model by assuming a constant global mean ($\mu$) across both states. This isolates the regime-switching mechanics entirely on the market volatility.
+Because weekly log returns are practically indistinguishable from zero and a "crisis" is defined primarily by an explosion in variance rather than a shift in the mean, we simplify the emission model by assuming a constant global mean of 0 across both states, same as in our simple model. This isolates the regime-switching mechanics entirely on the market volatility.
 
 ### Hierarchical Parameter Definitions
 
@@ -399,11 +433,7 @@ We chose these beta priors because we want market regimes to be sticky (hard to 
 
 ### Justification of Priors and Constraints
 
-The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because of the following:
-* **Shape Control ($\alpha = 2$):** An Exponential distribution has its mode strictly at zero. By using a Gamma shape parameter of $2$, we introduce a gentle peak that mathematically pushes the sampler away from exactly zero.
-* **Weakly Informative Rate ($\beta = 0.1$):** Because the rate parameter acts as an inverse scale, setting it to $0.1$ spreads the probability mass out over a wide, flat tail. This provides a weakly informative prior that allows the true, extreme volatility of events like the 2008 Financial Crisis and the COVID-19 crash to be driven by the data rather than prior bias. 
-
-Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve the "label switching", same as in our naive model. 
+The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because it is the conjugate prior of the exponential distribution. Since an Exponential distribution has its mode strictly at zero, using a Gamma shape parameter of $\alpha = 2$ introduces a gentle peak that mathematically pushes the variance away from zero. Furthermore, because the rate parameter acts as an inverse scale, setting it to $\beta = 0.1$ spreads the probability mass out over a wide, flat tail. This provides a weakly informative prior that allows the true, extreme volatility of events like the 2008 Financial Crisis and the COVID-19 crash to be driven by the data rather than prior bias. Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve "label switching," just as in our naive model.
 
 ### Implmentation of HHMM
 
@@ -444,6 +474,9 @@ data.frame(
     x = "Date",
     y = "Probability"
   )
+
+as.data.frame(fit_hierarchical$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+
 ```
 
 ### Diagnostics HHMM
@@ -463,38 +496,51 @@ mcmc_rank_hist(fit_hierarchical$draws(params_hhmm)) +
 ### Correctness check HHMM
 
 ```{r message=FALSE}
-T_sim <- 1000
-true_mu <- 0
-true_sigma <- c(0.015, 0.040)
-true_P <- matrix(c(0.95, 0.05, 
-                   0.10, 0.90), nrow = 2, byrow = TRUE)
+set.seed(405)
 
-true_states <- numeric(T_sim)
-true_states[1] <- 1
-for (t in 2:T_sim) {
-  true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ])
-}
-
-simulated_Y <- numeric(T_sim)
-for (t in 1:T_sim) {
-  simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]])
-}
-
-stan_data_synth_hhmm <- list(
-  T = T_sim,
-  Y = simulated_Y
+coverage_results_hierarchical <- data.frame(
+  P11_captured = logical(n_sims),
+  P22_captured = logical(n_sims),
+  sigma1_captured = logical(n_sims),
+  sigma2_captured = logical(n_sims)
 )
 
-fit_synth_hhmm <- model_hierarchical$sample(
-  data = stan_data_synth_hhmm, 
-  chains = 4, 
-  parallel_chains = 4, 
-  seed = 405, 
-  adapt_delta = 0.95, 
-  refresh = 0
-)
+cat("Starting 100 simulations for Hierarchical Model... This will take a few minutes.\n")
 
-as.data.frame(fit_synth_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+for (i in 1:n_sims) {
+  true_states_hhmm <- numeric(T_sim)
+  true_states_hhmm[1] <- 1
+  for (t in 2:T_sim) {
+    true_states_hhmm[t] <- sample(1:2, size = 1, prob = true_P[true_states_hhmm[t-1], ])
+  }
+  
+  simulated_Y_hhmm <- numeric(T_sim)
+  for (t in 1:T_sim) {
+    simulated_Y_hhmm[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states_hhmm[t]])
+  }
+  
+  fit_sim_hierarchical <- model_hierarchical$sample(
+    data = list(T = T_sim, Y = simulated_Y_hhmm), 
+    chains = 4, 
+    parallel_chains = 4, 
+    adapt_delta = 0.95, # Crucial for hierarchical models
+    refresh = 0, 
+    show_messages = FALSE
+  )
+  
+  draws_hierarchical <- fit_sim_hierarchical$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix")
+  cis_hierarchical <- apply(draws_hierarchical, 2, quantile, probs = c(0.05, 0.95))
+  
+  coverage_results_hierarchical$P11_captured[i] <- true_P[1,1] >= cis_hierarchical[1, "P11"] && true_P[1,1] <= cis_hierarchical[2, "P11"]
+  coverage_results_hierarchical$P22_captured[i] <- true_P[2,2] >= cis_hierarchical[1, "P22"] && true_P[2,2] <= cis_hierarchical[2, "P22"]
+  coverage_results_hierarchical$sigma1_captured[i] <- true_sigma[1] >= cis_hierarchical[1, "sigma_1"] && true_sigma[1] <= cis_hierarchical[2, "sigma_1"]
+  coverage_results_hierarchical$sigma2_captured[i] <- true_sigma[2] >= cis_hierarchical[1, "sigma_2"] && true_sigma[2] <= cis_hierarchical[2, "sigma_2"]
+  
+  if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n")
+}
+
+cat("\n--- HIERARCHICAL 100-RUN CALIBRATION RESULTS ---\n")
+print(colMeans(coverage_results_hierarchical))
 ```
 
 To validate the computational accuracy of the Hierarchical Hidden Markov Model (HHMM) and ensure the hyperparameter $\lambda$ did not caulse label switching, we conducted a parameter recovery check on a synthetic dataset of 1000 weeks. The generative parameters were set to $P_{11} = 0.95$, $P_{22} = 0.90$, $\sigma_1 = 0.015$, and $\sigma_2 = 0.040$.
@@ -504,41 +550,69 @@ The Hamiltonian Monte Carlo (HMC) sampler exhibited good convergence, yielding $
 ### LOO Goodness of fit 
 
 ```{r message=FALSE}
-n_total <- nrow(gspc_returns)
-actual_left_out_y <- gspc_returns$log_return[n_total]
-left_out_date <- gspc_returns$date[n_total]
+subset_returns_hhmm <- tail(gspc_returns, 300) 
+n_total_subset_hhmm <- nrow(subset_returns_hhmm)
+test_weeks_hhmm <- 50 
 
-stan_data_loo_hhmm <- list(
-  T = n_total - 1,
-  Y = gspc_returns$log_return[1:(n_total - 1)]
-)
+results_list_hierarchical <- list()
 
-fit_loo_hhmm <- model_hierarchical$sample(
-  data = stan_data_loo_hhmm, 
-  chains = 4, 
-  parallel_chains = 4, 
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  adapt_delta = 0.95,
-  seed = 405, 
-  refresh = 0
-)
-y_pred_hhmm <- fit_loo_hhmm$draws("y_predict", format = "matrix")
-ci_hhmm <- quantile(y_pred_hhmm, probs = c(0.05, 0.95))
+cat("Starting 50 rolling LOO predictions for Hierarchical Model...\n")
 
-cat("--- HIERARCHICAL MODEL: LOO GOODNESS OF FIT ---\n")
-cat("Predicting for Date:", as.character(left_out_date), "\n")
-cat("Actual Left-Out Log Return:", actual_left_out_y, "\n\n")
+for (i in test_weeks_hhmm:1) {
+  current_T_hhmm <- n_total_subset_hhmm - i
+  actual_y_hhmm <- subset_returns_hhmm$log_return[current_T_hhmm + 1]
+  
+  stan_data_loo_hierarchical <- list(
+    T = current_T_hhmm,
+    Y = subset_returns_hhmm$log_return[1:current_T_hhmm]
+  )
+  
+  fit_loop_hierarchical <- model_hierarchical$sample(
+    data = stan_data_loo_hierarchical, 
+    chains = 4, 
+    parallel_chains = 4, 
+    adapt_delta = 0.95,
+    refresh = 0, 
+    show_messages = FALSE
+  )
+  
+  y_pred_hierarchical <- fit_loop_hierarchical$draws("y_predict", format = "matrix")
+  ci_hierarchical <- quantile(y_pred_hierarchical, probs = c(0.05, 0.95))
+  
+  inside_hhmm <- actual_y_hhmm >= ci_hierarchical[1] && actual_y_hhmm <= ci_hierarchical[2]
+  
+  results_list_hierarchical[[length(results_list_hierarchical) + 1]] <- data.frame(
+    Date = subset_returns_hhmm$date[current_T_hhmm + 1],
+    Actual = actual_y_hhmm,
+    CI_Lower = ci_hierarchical[1],
+    CI_Upper = ci_hierarchical[2],
+    Captured = inside_hhmm
+  )
+  
+  if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n")
+}
 
-cat("Model's 90% Credible Interval:\n")
-print(ci_hhmm)
+merged_loo_df_hierarchical <- do.call(rbind, results_list_hierarchical)
+proportion_covered_hierarchical <- mean(merged_loo_df_hierarchical$Captured)
 
-cat("\nCaptured the true value?", actual_left_out_y >= ci_hhmm[1] && actual_left_out_y <= ci_hhmm[2], "\n")
+cat("\n--- HIERARCHICAL MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
+cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n")
 ```
 
 Same as with the naive model, to evaluate the predictive calibration of the Hierarchical Hidden Markov Model (HHMM), we performed a Leave-One-Out (LOO) posterior predictive check. The time series was truncated at week $T-1$, requiring the model to generate a one-step-ahead forecast for the unobserved log return ($Y_T$) for the week of April 14, 2026.
 
 The realized log return was 2.18%, which fell comfortably within the model’s 90% predictive credible interval of -4.56% to +4.79%. This successful capture confirms that the introduction of the data-driven hyperparameter ($\lambda$) to dictate the scale of the emission variances did not compromise the model's predictive accuracy. Instead, the HHMM remained calibrated to the current market regime, generating uncertainty bounds that appropriately accounted for realized market volatility..
+
+## Notes for Discussion
+
+Model currently has geometric waiting times (this is solved by having more states), which causes the model to suddenly change regime/not change for a long time. We need to discuss this as a potential limitation/new avenue to follow. I know that there is hidden markov models with MANY latent statses (something called like a factorial  model thingy)
+
+- Do correctness on tiny data multiple
+- Use subset of the data for both loo and correctness check. 
+
+While the Hierarchical Hidden Markov Model (HHMM) successfully captures broad market regimes and provides well-calibrated out-of-sample forecasts, its reliance on a strict binary state space ($X_t \in \{1, 2\}$) introduces structural limitations. In our current architecture, the model is forced into an "all-or-nothing problem, attempting to classify every trading week as either perfectly normal or a total crisis. Because the transition waiting times are geometrically distributed, the model assumes the probability of exiting a market regime decays rigidly over time. This results in our model oscillating between the crisis and calm state.
+
+A soltion to this problem would be expanding the latent state space to a four-state model ($X_t \in \{1, 2, 3, 4\}$) with explicit macroeconomic interpretations: Severe Crisis, Mild Crisis (or market correction), Normal Growth, and Extreme Growth (or bull run). This expansion allows the model to capture a more natural life cycle of a financial regime, instead of having a black or white rigid approach to categorizing. For example, a market could transition from Extreme Growth into a Mild Crisis before cascading into a Severe Crisis. Most importantly, this multi-state approach could possibly resolve the geometric waiting time limitation for broader economic cycles.
 
 ## References
 
