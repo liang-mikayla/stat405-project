@@ -25,27 +25,16 @@ Stock market volatility poses significant challenges for investors, particularly
 
 To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by introducing a hierarchical structure to the emission variances. Instead of relying on rigid, fixed priors that are highly sensitive to the scale of log returns, the HHMM utilizes a data-driven hyperparameter to dictate the rate of volatility. This flexible structure allows the model to better accommodate the "fat tails" inherent in financial data, preventing single-week outliers from hijacking the latent state estimation and producing much more accurate, sustained regime probabilities. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
 
-The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. 
+The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility.
 
 ## Literature Review
 
-[Description of sections]
+The rest of this study is outlined as follows. Section I describes the method of data collection and applied transformations. Section II defines the structure of our two Bayesian models and the inferential methods used for the analysis. Section III is an application of the methods to our data. 
 
-## Methodology
+## Section I: Methodology
 
-To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
+To reduce the computational burden while preserving essential volatility clustering, the daily data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. Finally, these weekly prices will be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
-### Definition of Indexes
-
-- ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. This is the observation that we will most likely use.
-
-- ^VIX (CBOE Volatility Index): Market volatility measure that we can use for model validation.
-
-- XLK (Technology Select Sector SPDR Fund): An ETF containing all the tech stocks in the S&P 500. Maybe use for dot com crash? 
-
-- XLF (Financial Select Sector SPDR Fund): An ETF containing all the financial stocks in the S&P 500 (banks, insurance, etc.). Check for 2008 Financial Crisis?
-
-- TLT (iShares 20+ Year Treasury Bond ETF): This tracks long-term US government bonds. "Safe haven" asset that normally behaves opposite to stocks. Does the model still work with this?
 
 ```{r}
 project_tickers <- c("^GSPC", "^VIX", "XLK", "XLF", "TLT")
@@ -74,27 +63,8 @@ weekly_log_returns <- weekly_returns %>%
 head(weekly_log_returns)
 ```
 
-## EDA
 
-```{r}
-market_data %>%
-  filter(symbol %in% c("^GSPC", "^VIX")) %>%
-  ggplot(aes(x = date, y = adjusted, color = symbol)) +
-  geom_line(show.legend = FALSE) +
-  facet_wrap(~symbol, scales = "free_y", ncol = 1) +
-  theme_minimal() +
-  labs(title = "S&P 500 Index vs. VIX Volatility (1998 - Present)",
-       subtitle = "Visualizing structural market shocks and volatility clustering",
-       x = "Year",
-       y = "Adjusted Value / Index Level") +
-  scale_color_manual(values = c("^GSPC" = "steelblue", "^VIX" = "firebrick"))
-```
-The visualization highlights a clear inverse correlation: significant price contractions in the S&P 500 ($^GSPC$) correspond directly to sharp spikes in the VIX. These synchronized movements clearly mark the three major structural shocks identified in our proposal. The abrupt, vertical nature of these volatility surges visually mimics discrete state transitions, reinforcing our decision to utilize a Hidden Markov Model (HMM).
-
-Furthermore, the raw S&P 500 series exhibits a distinct upward trend over the 25-year period, indicating it is non-stationary. By transforming these prices into weekly log returns, $Y_{t}=\ln(P_{t}/P_{t-1})$, we remove this drift and stabilize the variance. This transformation is mathematically critical; it ensures our HMM operates on a stationary distribution, which is a necessary condition for the model to reliably infer the "Calm" and "Crisis" latent states over the long term.
-
-
-## Hidden Markov Model
+## Section II: Hidden Markov Model
 
 ### The Likelihood
 Let $Y_t$ represent the weekly log return of the index at time $t$, and let $X_t \in \{1, 2\}$. State 1 represents a "Calm/Normal" market regime, and State 2 represents a "Crisis" regime.
@@ -626,3 +596,37 @@ https://www.cs.ubc.ca/~murphyk/Bayes/rabiner.pdf
 
 MDPI With similar approach:
 https://www.mdpi.com/1911-8074/13/12/311
+
+## Appendix
+
+To validate the accuracy of our approach, we may utilize the CBOE Volatility Index (VIX), allowing us to compare our model's estimated latent volatility against Wall Street's implied volatility. Additionally, assets such as sector-specific ETFs (XLK, XLF) and a safe-haven treasury bond (TLT) will be incorporated to test if the model's regime-switching logic generalizes reliably across different market segments, as well as sector-specific insight of each crisis. The relevant ETFs are defined below:
+
+- ^GSPC (S&P 500 Index): Top 500 stocks in the U.S. This is the observation that we will most likely use.
+
+- ^VIX (CBOE Volatility Index): Market volatility measure that we can use for model validation.
+
+- XLK (Technology Select Sector SPDR Fund): An ETF containing all the tech stocks in the S&P 500.
+
+- XLF (Financial Select Sector SPDR Fund): An ETF containing all the financial stocks in the S&P 500 (banks, insurance, etc.).
+
+- TLT (iShares 20+ Year Treasury Bond ETF): This tracks long-term US government bonds. "Safe haven" asset that normally behaves opposite to stocks.
+
+## EDA
+
+```{r}
+market_data %>%
+  filter(symbol %in% c("^GSPC", "^VIX")) %>%
+  ggplot(aes(x = date, y = adjusted, color = symbol)) +
+  geom_line(show.legend = FALSE) +
+  facet_wrap(~symbol, scales = "free_y", ncol = 1) +
+  theme_minimal() +
+  labs(title = "S&P 500 Index vs. VIX Volatility (1998 - Present)",
+       subtitle = "Visualizing structural market shocks and volatility clustering",
+       x = "Year",
+       y = "Adjusted Value / Index Level") +
+  scale_color_manual(values = c("^GSPC" = "steelblue", "^VIX" = "firebrick"))
+```
+
+The visualization highlights a clear inverse correlation: significant price contractions in the S&P 500 ($^GSPC$) correspond directly to sharp spikes in the VIX. These synchronized movements clearly mark the three major structural shocks identified in our proposal. The abrupt, vertical nature of these volatility surges visually mimics discrete state transitions, reinforcing our decision to utilize a Hidden Markov Model (HMM).
+
+Furthermore, the raw S&P 500 series exhibits a distinct upward trend over the 25-year period, indicating it is non-stationary. By transforming these prices into weekly log returns, $Y_{t}=\ln(P_{t}/P_{t-1})$, we remove this drift and stabilize the variance. This transformation is mathematically critical; it ensures our HMM operates on a stationary distribution, which is a necessary condition for the model to reliably infer the "Calm" and "Crisis" latent states over the long term.
