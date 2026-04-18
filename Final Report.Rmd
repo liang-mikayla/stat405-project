@@ -35,35 +35,6 @@ The rest of this study is outlined as follows. Section I describes the method of
 
 To reduce the computational burden while preserving essential volatility clustering, the daily S&P500 data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. These weekly prices will then be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
-
-```{r}
-project_tickers <- c("^GSPC")
-
-market_data <- tq_get(project_tickers,
-                      get  = "stock.prices",
-                      from = "1998-01-01")
-
-weekly_returns <- market_data %>%
-  mutate(week = floor_date(date, "week")) %>%
-  group_by(symbol, week) %>%
-  arrange(date) %>%
-  slice_tail(n = 1) %>%
-  ungroup()
-  
-weekly_log_returns <- weekly_returns %>%
-  group_by(symbol) %>%
-  arrange(date) %>%
-  mutate(
-    previous_price = lag(adjusted),
-    log_return = log(adjusted / previous_price)
-  ) %>%
-  filter(!is.na(log_return)) %>%
-  select(symbol, date, adjusted, log_return)
-
-head(weekly_log_returns)
-```
-
-
 ## Section II: Hidden Markov Model
 
 ### The Likelihood
@@ -97,7 +68,7 @@ $$P_{22} \sim \text{Beta}(1, 1)$$
 
 We chose uniformative priors to keep the model more simple.
 
-### The Marginalized Joint Likelihood
+### Hamiltonian Monte Carlo (HMC)
 
 Because Stan's Hamiltonian Monte Carlo (HMC) algorithm relies on continuous gradient calculations, it cannot directly sample discrete latent parameters. Consequently, computing the likelihood requires summing over the two states $\{1, 2\}$ for all $T$ weeks:
 
@@ -111,9 +82,46 @@ Therefore the final marginalized log likelihood as computed as follows:
 
 $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) \right)$$
 
-with all computations performed in log-space using Stan's numerically stable \texttt{log\_sum\_exp} function to prevent floating-point underflow.
+All computations are performed in log-space using Stan's numerically stable \texttt{log\_sum\_exp} function to prevent floating-point underflow.
+
+## Variational Inference
+
+We additionally fit both the HMM and HHMM using Variational Inference (VI). This approach is intended to evaluate the tradeoff between inferential accuracy and computational efficiency. Rather than sampling from the true posterior like HMC, VI reframes inference as an optimization problem. Specifically, we seek the distribution $q^*_\phi \in \mathscr{Q}$ that most closely approximates the true posterior $\pi(x)$, as measured by the KL divergence:
+
+$$q^*_\phi = \arg\min_{\phi} \text{KL}(q_\phi \| \pi)$$
+
+We adopt the meanfield variational family, which approximates the posterior using a 
+multivariate normal distribution with a diagonal covariance matrix.
 
 ## Section III: Implmentation of HMM
+
+
+```{r}
+project_tickers <- c("^GSPC")
+
+market_data <- tq_get(project_tickers,
+                      get  = "stock.prices",
+                      from = "1998-01-01")
+
+weekly_returns <- market_data %>%
+  mutate(week = floor_date(date, "week")) %>%
+  group_by(symbol, week) %>%
+  arrange(date) %>%
+  slice_tail(n = 1) %>%
+  ungroup()
+  
+weekly_log_returns <- weekly_returns %>%
+  group_by(symbol) %>%
+  arrange(date) %>%
+  mutate(
+    previous_price = lag(adjusted),
+    log_return = log(adjusted / previous_price)
+  ) %>%
+  filter(!is.na(log_return)) %>%
+  select(symbol, date, adjusted, log_return)
+
+head(weekly_log_returns)
+```
 
 ```{r message=FALSE}
 model_hmm <- cmdstan_model("hmm_volatility.stan")
