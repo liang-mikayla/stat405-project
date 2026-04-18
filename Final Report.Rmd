@@ -254,7 +254,10 @@ data.frame(
     y = "Probability"
   )
 
+as.data.frame(fit_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
+
+The baseline Hidden Markov Model successfully identified two distinct market regimes within the S&P 500 log returns. The normal growth state, represented by State 1, is characterized by low volatility of approximately 1.62% per week and exhibits extreme persistence. With $P_{11} \approx 0.970$, the model suggests a 97% probability of the market remaining in this stable environment week-over-week. Conversely, the crisis regime in State 2 shows a massive volatility jump to approximately 4.11% per week, which is roughly 2.5 times higher than the baseline. This regime has a slightly lower persistence of $P_{22} \approx 0.909$, which reflects that while financial panics are intensely volatile, they are typically shorter-lived than prolonged periods of normal market growth.
 
 ### HMM Diagnostic Plots
 
@@ -325,9 +328,7 @@ cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
 print(colMeans(coverage_results))
 ```
 
-To validate computational correctness of our baseline Hidden Markov Model and rule out software defects, we performed a Simulation-Based Calibration (SBC) across 100 synthetic datasets. To ensure the calibration accurately reflected our empirical application, each synthetic time series was simulated to match the full length of the S&P 500 dataset ($T \approx 1300$), with generative parameters set to $P_{11} = 0.95$, $P_{22} = 0.90$, $\sigma_1 = 0.015$, and $\sigma_2 = 0.040$.
-
-For each of the 100 simulations, we fitted the model and extracted the 90% posterior credible intervals. A correctly implemented model should capture the true generative parameters in its 90% credible intervals approximately 90% of the time. The empirical coverage proportions were 0.96 for $P_{11}$, 0.97 for $P_{22}$, 0.97 for $\sigma_1$, and 0.96 for $\sigma_2$. This over-coverage indicates that the model's posterior intervals are conservative, but highly robust. Most importantly, it proves that the implementation are mathematically sound and free of software defects.
+To validate the computational correctness of our baseline model, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic datasets matching the full length of our sample. For a 90% credible interval, a properly calibrated model should capture the true parameters approximately 90% of the time. Our empirical coverage results were 0.91 for $P_{11}$, 0.92 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. While $\sigma_1$ and $\sigma_2$ sit slightly below the nominal 0.90 target, this deviation is entirely expected due to Monte Carlo error. With 100 simulations, the binomial standard deviation for a 90% probability is roughly 3%, meaning any result between 0.87 and 0.93 is within normal statistical noise. Because the coverage for all four parameters falls within this expected range, we can conclude that our Stan implementation is software defect-free for our simple Hidden Markov Model.
 
 
 ### Leave One Out Goodness of Fit Check HMM Model
@@ -479,6 +480,8 @@ as.data.frame(fit_hierarchical$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 
 ```
 
+Similar to ou more simple model, the results for the hierarchical Hidden Markov Model identify two distinct market environments that align with historical economic events. The normal growth state, represented by State 1, exhibits a low weekly volatility of approximately 1.62% and is highly stable, with a 97.2% probability ($P_{11}$) of remaining in that state the following week. In contrast, the crisis regime in State 2 shows a significant volatility spike to about 4.08%, which is roughly 2.5 times higher than the normal baseline. This crisis state is also quite persistent at 91.6% ($P_{22}$), though slightly less so than the normal state, reflecting the fact that market panics are sustained events but typically resolve faster than long-term growth periods. The smoothed probability plot confirms these findings by clearly pinning the probability of a crisis at 1.00 during the 2008 financial crisis and the 2020 COVID-19 crash, although the jittery behavior still continues. This further highlights the model's tendency to switch rapidly when attempting to classify more moderate periods of market turbulence.
+
 ### Diagnostics HHMM
 
 ```{r}
@@ -543,9 +546,7 @@ cat("\n--- HIERARCHICAL 100-RUN CALIBRATION RESULTS ---\n")
 print(colMeans(coverage_results_hierarchical))
 ```
 
-To validate the computational accuracy of the Hierarchical Hidden Markov Model (HHMM) and ensure the hyperparameter $\lambda$ did not caulse label switching, we conducted a parameter recovery check on a synthetic dataset of 1000 weeks. The generative parameters were set to $P_{11} = 0.95$, $P_{22} = 0.90$, $\sigma_1 = 0.015$, and $\sigma_2 = 0.040$.
-
-The Hamiltonian Monte Carlo (HMC) sampler exhibited good convergence, yielding $\hat{R}$ values of 1.000 across all monitored parameters. The model successfully recovered the true parameter values, locating all four generative targets within their respective 90% posterior credible intervals. The emission volatilities were estimated with high precision ($\sigma_1 \approx 0.0149$, $\sigma_2 \approx 0.0404$). The transition probability for the crisis state ($P_{22}$) exhibited a slightly wider credible interval skewed marginally lower than the true value, which is consistent with the latent state distribution: because the generative model spends approximately 95% of the time in the calm state, the sampler observes fewer transitions into and out of the crisis regime, increasing the posterior uncertainty for that specific parameter. Overall, this test proves that the hierarchical implementation is correct, free of software defects, and capable of identifying latent regime-switching dynamics.
+To evaluate the computational correctness of the Hierarchical Hidden Markov Model and rule out software defects, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic data matching our sample length. The empirical coverage results were 0.88 for $P_{11}$, 0.89 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. All four parameter coverages fall within the expected binomial margin of error for 100 simulations (roughly $\pm 3\%$). This confirms that the hierarchical priors are correctly implemented, the Hamiltonian Monte Carlo sampler is successfully exploring the complex posterior geometry, and the model is capable of recovering the true latent regime dynamics.
 
 ### LOO Goodness of fit 
 
@@ -598,12 +599,12 @@ proportion_covered_hierarchical <- mean(merged_loo_df_hierarchical$Captured)
 cat("\n--- HIERARCHICAL MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
 cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n")
 ```
+To evaluate the goodness of fit and out-of-sample predictive calibration of the Hierarchical Hidden Markov Model, we did the same procedure as with the simple model. The hierarchical model yielded an empirical coverage proportion of 0.92 (capturing 46 of the 50 out-of-sample weeks). This result indicates good model calibration, matching the nominal 90% target even more closely than the baseline model.
 
-Same as with the naive model, to evaluate the predictive calibration of the Hierarchical Hidden Markov Model (HHMM), we performed a Leave-One-Out (LOO) posterior predictive check. The time series was truncated at week $T-1$, requiring the model to generate a one-step-ahead forecast for the unobserved log return ($Y_T$) for the week of April 14, 2026.
-
-The realized log return was 2.18%, which fell comfortably within the model’s 90% predictive credible interval of -4.56% to +4.79%. This successful capture confirms that the introduction of the data-driven hyperparameter ($\lambda$) to dictate the scale of the emission variances did not compromise the model's predictive accuracy. Instead, the HHMM remained calibrated to the current market regime, generating uncertainty bounds that appropriately accounted for realized market volatility..
 
 ## Notes for Discussion
+
+When compared to the parameter estimates generated by the more complex Hierarchical HMM, the baseline estimates remain remarkably stable. The near-identical recovery of both the emission volatilities and the transition matrix across different model architectures demonstrates high parameter robustness, confirming that these volatility regimes are intrinsic features of the data rather than artifacts of a specific prior structure.
 
 Model currently has geometric waiting times (this is solved by having more states), which causes the model to suddenly change regime/not change for a long time. We need to discuss this as a potential limitation/new avenue to follow. I know that there is hidden markov models with MANY latent statses (something called like a factorial  model thingy)
 
@@ -612,7 +613,7 @@ Model currently has geometric waiting times (this is solved by having more state
 
 While the Hierarchical Hidden Markov Model (HHMM) successfully captures broad market regimes and provides well-calibrated out-of-sample forecasts, its reliance on a strict binary state space ($X_t \in \{1, 2\}$) introduces structural limitations. In our current architecture, the model is forced into an "all-or-nothing problem, attempting to classify every trading week as either perfectly normal or a total crisis. Because the transition waiting times are geometrically distributed, the model assumes the probability of exiting a market regime decays rigidly over time. This results in our model oscillating between the crisis and calm state.
 
-A soltion to this problem would be expanding the latent state space to a four-state model ($X_t \in \{1, 2, 3, 4\}$) with explicit macroeconomic interpretations: Severe Crisis, Mild Crisis (or market correction), Normal Growth, and Extreme Growth (or bull run). This expansion allows the model to capture a more natural life cycle of a financial regime, instead of having a black or white rigid approach to categorizing. For example, a market could transition from Extreme Growth into a Mild Crisis before cascading into a Severe Crisis. Most importantly, this multi-state approach could possibly resolve the geometric waiting time limitation for broader economic cycles.
+A solution to this problem would be expanding the latent state space to a four-state model ($X_t \in \{1, 2, 3, 4\}$) with explicit macroeconomic interpretations: Severe Crisis, Mild Crisis (or market correction), Normal Growth, and Extreme Growth (or bull run). This expansion allows the model to capture a more natural life cycle of a financial regime, instead of having a black or white rigid approach to categorizing. For example, a market could transition from Extreme Growth into a Mild Crisis before cascading into a Severe Crisis. Most importantly, this multi-state approach could possibly resolve the geometric waiting time limitation for broader economic cycles.
 
 ## References
 
