@@ -95,7 +95,6 @@ multivariate normal distribution with a diagonal covariance matrix.
 
 ## Section III: Implmentation of HMM
 
-
 ```{r}
 project_tickers <- c("^GSPC")
 
@@ -183,6 +182,7 @@ mcmc_rank_hist(fit_hmc_hmm$draws(params_naive)) +
   ggtitle("Rank Histograms: Naive HMM") +
   theme_minimal() 
 ```
+
 ### Correctness Check With Synthetic Data Model 1
 
 ```{r message=FALSE}
@@ -326,11 +326,59 @@ Regarding the potential limitations of the model, we thought that prior sensitiv
 fit_vi_hmm <- model_hmm$variational(
   data = stan_data,
   seed = 405,
-  refresh = 0,
   algorithm = "meanfield",
-  output_samples = 1000
+  output_samples = 1000,
+  refresh = 0
 )
+```
 
+``` {r}
+prob_crisis_draws_vi <- fit_vi_hmm$draws("prob_crisis", format = "matrix")
+mean_prob_crisis_vi <- colMeans(prob_crisis_draws_vi)
+
+data.frame(
+  date = gspc_returns$date,
+  prob = mean_prob_crisis_vi
+) %>%
+  ggplot(aes(x = date, y = prob)) +
+  geom_line(color = "steelblue") +
+  theme_minimal() +
+  labs(
+    title = "Smoothed Probability of Market Crisis Regime (Variational Inference)",
+    subtitle = expression("Posterior Mean of " * P(X[t] == Crisis ~ "|" ~ Y["1:T"])),
+    x = "Date",
+    y = "Probability"
+  )
+
+as.data.frame(fit_vi_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
+```
+
+```{r}
+# code modified from "Advanced Inference - VI with Stan" lecture
+sel <- c("P11", "P22", "sigma_1", "sigma_2")
+
+data_hmc <- mcmc_intervals_data(fit_hmm$draws(variables = sel)) %>%
+  mutate(method = "HMC")
+
+data_vi <- mcmc_intervals_data(fit_vi_hmm$draws(variables = sel)) %>%
+  mutate(method = "Variational")
+
+bind_rows(data_hmc, data_vi) %>%
+  ggplot(aes(x = m, y = method, color = method)) +
+  geom_linerange(aes(xmin = ll, xmax = hh),
+                 position = position_dodge(width = 0.5)) +
+  geom_linerange(aes(xmin = l, xmax = h),
+                 position = position_dodge(width = 0.5), linewidth = 1.5) +
+  geom_point(position = position_dodge(width = 0.5), size = 2) +
+  facet_wrap(~parameter, scales = "free_x", ncol = 2) +
+  theme_minimal() +
+  labs(
+    title = "HMM: HMC vs Variational Inference",
+    subtitle = "Outer lines = 95% CI, inner lines = 80% CI",
+    x = "Estimate",
+    y = NULL,
+    color = "Method"
+  )
 ```
 
 ## Hierarchical Hidden Markov Model (Model 2)
