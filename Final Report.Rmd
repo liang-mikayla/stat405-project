@@ -379,6 +379,18 @@ We started by just using the forward algorithm to calculate "filtered" probabili
 
 Regarding the potential limitations of the model, we thought that prior sensitivity may be a thing, especially for market volatility. We would generally expect the states of the markets to be persistent, meaning parameters like $P_{11}$ and $P_{22}$ should have higher values. Because of this, using the rigid exponential(1) prior for the market volatilities may be actively restricting the model.
 
+## Variational Inference
+
+``` {r message=FALSE}
+fit_vi_hmm <- model_hmm$variational(
+  data = stan_data,
+  seed = 405,
+  refresh = 0,
+  algorithm = "meanfield",
+  output_samples = 1000
+)
+
+```
 
 ## Hierarchical Hidden Markov Model (Model 2)
 
@@ -423,7 +435,8 @@ fit_hierarchical <- model_hierarchical$sample(
   iter_warmup = 1000,
   iter_sampling = 1000,
   adapt_delta = 0.95, # High adapt_delta helps with hierarchical model geometry
-  seed = 405
+  seed = 405,
+  refresh = 0
 )
 ```
 
@@ -571,6 +584,18 @@ cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchi
 ```
 To evaluate the goodness of fit and out-of-sample predictive calibration of the Hierarchical Hidden Markov Model, we did the same procedure as with the simple model. The hierarchical model yielded an empirical coverage proportion of 0.92 (capturing 46 of the 50 out-of-sample weeks). This result indicates good model calibration, matching the nominal 90% target even more closely than the baseline model.
 
+## Variational Inference
+
+``` {r message=FALSE}
+fit_vi_hhmm <- model_hierarchical$variational(
+  data = stan_data_hierarchical,
+  seed = 405,
+  algorithm = "meanfield",
+  output_samples = 1000,
+  refresh = 0
+)
+
+```
 
 ## Notes for Discussion
 
