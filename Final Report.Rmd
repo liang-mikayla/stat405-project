@@ -1,7 +1,6 @@
 ---
 title: "STAT 405 Final Project"
 author: "Alec Neme (84761030), Mikayla Liang (87701603)"
-date: "2026-03-15"
 output: pdf_document
 ---
 
@@ -21,25 +20,33 @@ Investor confidence is fundamentally tied to market stability, as sudden transit
 
 ## Introduction
 
-Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk and make confident investment decisions. Historically, forecasting has relied on frequentist methodologies, such as ARIMA and GARCH. However, these models are limited by their inability to incorporate prior context or macroeconomic indicators. In contrast, Bayesian approaches integrate prior probability distributions and typically achieve greater accuracy in predicting volatility.
+Stock market volatility poses significant challenges for investors, particularly during periods of economic instability. Accurately detecting these periods is critical as it allows investors to anticipate risk and make confident investment decisions. Historically, forecasting has relied on frequentist methodologies, such as ARIMA and GARCH (Patel, 2024). However, these models are limited by their inability to incorporate prior context or macroeconomic indicators. In contrast, Bayesian approaches integrate prior probability distributions and typically achieve greater accuracy in predicting volatility.
 
-To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by introducing a hierarchical structure to the emission variances. Instead of relying on rigid, fixed priors that are highly sensitive to the scale of log returns, the HHMM utilizes a data-driven hyperparameter to dictate the rate of volatility. This flexible structure allows the model to better accommodate the "fat tails" in financial data, preventing single-week outliers from hijacking the latent state estimation and producing much more accurate, sustained regime probabilities. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
+To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by introducing a hierarchical structure to the emission variances. Instead of relying on fixed priors that are highly sensitive to the scale of log returns, the HHMM uses a hyperparameter to determine the rate of volatility. This flexibility allows the model to better accommodate the "fat tails" in financial data, which prevents single-week outliers from impacting the latent state estimation and producing more accurate regime probabilities. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
 
-The analysis spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. Additional exploration of other tickers is contained int the Appendix.
+This study spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. Additional exploration of other tickers is contained int the Appendix.
 
-## TODO: Literature Review
+## Literature Review
+Hidden Markov Models are commonly applied to financial time series analysis and regime detection. Rabiner (1989) established the foundational algorithmic framework for HMMs, introducing the Forward-Backward algorithm that underpin modern HMM implementations. This study utilizes the Forward Algorithm introduced in Rabiner's dynamic programming formulation. Hamilton (1989) demonstrated how regime-switching models can be applied to macroeconomic time series, and showed that non-stationary economic data can be effectively modelled as transitions between discrete latent states. These works provided the theoretical motivation for applying Bayesian models to financial markets.
+
+For frequentist volatility modelling, Engle (1982) introduced the ARCH model and its GARCH extension, which remain the industry standard for capturing volatility clustering in financial returns. While GARCH models are effective at modelling time series volatility, they are inable to incorporate prior knowledge or quantify uncertainty in a principled Bayesian framework. This limitation motivates our use of HMMs with Bayesian inference instead.
+
+Wang et al. (2020) represent the most closely related work to this study, applying a Gaussian HMM directly to S&P 500 data to identify market regimes using a frequentist Baum-Welch expectation-maximization algorithm. This study fits the same model class using Bayesian inference instead, generating uncertainty quantification and the incorporation of prior knowledge. We extend this framework to a Hierarchical HMM and address the prior sensitivity limitations present in the standard model.
 
 The rest of this study is outlined as follows. Section I describes the method of data collection and applied transformations. Section II defines the structure of our two Bayesian models and introduces the inferential methods we will be using for the analysis. Section III contains the implementation of the discussed methods, building both the HMM and HHMM models.
 
 ## Section I: Methodology
 
+### Research Objectives
+The key objective of this study is to investigate the following: between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
+2. 
 To reduce the computational burden while preserving essential volatility clustering, the daily S&P500 data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. These weekly prices will then be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
-## Section II: Hidden Markov Model
+### Hidden Markov Model (Model I)
 
 ### The Likelihood
 Let $Y_t$ represent the weekly log return of the index at time $t$, and let $X_t \in \{1, 2\}$. State 1 represents a "Calm/Normal" market regime, and State 2 represents a "Crisis" regime.
-$$Y_t \mid X_t = i \sim \mathcal{N}(0, \sigma_i^2)$$
+$$Y_t \mid X_t = i \sim {N}(0, \sigma_i^2)$$
 
 Where:
 $$\sigma_{1} \sim Exponential(1)$$
@@ -68,15 +75,41 @@ $$P_{22} \sim \text{Beta}(1, 1)$$
 
 We chose uniformative priors to keep the model more simple.
 
+### Hierarchical Hidden Markov Model (Model II)
+
+While our baseline HMM successfully captures discrete regime shifts, relying on fixed parameters (such as $\sigma_i \sim \text{Exponential}(1)$) introduces a vulnerability: the posterior may be overly sensitive to these rigid prior assumptions. To mitigate this and capture the true scale of market volatility driven by the data, we introduce a Hierarchical Hidden Markov Model (HHMM). 
+
+Because weekly log returns are practically indistinguishable from zero and a "crisis" is defined primarily by an explosion in variance rather than a shift in the mean, we simplify the emission model by assuming a constant global mean of 0 across both states, same as in our simple model. This isolates the regime-switching mechanics entirely on the market volatility.
+
+### Hierarchical Parameter Definitions
+
+The observed weekly log returns are modeled with a mean of 0 and state-dependent hierarchical variances:
+$$Y_t \mid X_t = i \sim {N}(0, \sigma_i^2)$$
+
+Rather than fixing the rate of the Exponential prior, we introduce a hyperparameter $\lambda$ drawn from a Gamma distribution:
+$$\lambda \sim \text{Gamma}(2, 0.1)$$
+$$\sigma_1 \sim \text{Exponential}(\lambda)$$
+$$\sigma_2 \sim \text{Exponential}(\lambda) \quad \text{subject to } \sigma_2 > \sigma_1$$
+
+$$P_{11} \sim \text{Beta}(50, 2)$$
+
+$$P_{22} \sim \text{Beta}(20, 2)$$
+
+We chose these beta priors because we want market regimes to be sticky (hard to transition from calm to crisis). The crisis should be less persistent, because the world actively works to come out of a crisis. 
+
+#### Justification of Priors and Constraints
+
+The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because it is the conjugate prior of the exponential distribution. Since an Exponential distribution has its mode strictly at zero, using a Gamma shape parameter of $\alpha = 2$ introduces a gentle peak that mathematically pushes the variance away from zero. Furthermore, because the rate parameter acts as an inverse scale, setting it to $\beta = 0.1$ spreads the probability mass out over a wide, flat tail. This provides a weakly informative prior that allows the true, extreme volatility of events like the 2008 Financial Crisis and the COVID-19 crash to be driven by the data rather than prior bias. Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve "label switching," just as in our naive model.
+
 ### Hamiltonian Monte Carlo (HMC)
 
 Because Stan's Hamiltonian Monte Carlo (HMC) algorithm relies on continuous gradient calculations, it cannot directly sample discrete latent parameters. Consequently, computing the likelihood requires summing over the two states $\{1, 2\}$ for all $T$ weeks:
 
 $$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \sum_{x_2=1}^2 \dots \sum_{x_T=1}^2 p(Y_{1:T}, X_{1:T} = x_{1:T} | \theta, P)$$
 
-The fully expanded equation involves exhaustive summations that requires computing the $\mathcal{O}(2^T)$ sum at every MCMC step. 
+The fully expanded equation involves exhaustive summations that requires computing the ${O}(2^T)$ sum at every MCMC step. 
 
-Given this approach is computationally expensive, we utilize Rao-Blackwellization Forward Algorithm to sum out the discrete state sequence $X_{1:T}$. The marginalization is computationally feasible through the Forward Algorithm, a method which exploits the Markov property to compute the marginal likelihood recursively in a single pass through the data. This method reduces the complexity from O(2T)\mathcal{O}(2^T) to \mathcal{O}(T). A full derivation of the Forward Algorithm and its log-space implementation is provided in the Appendix.
+Given this approach is computationally expensive, we utilize Rao-Blackwellization Forward Algorithm to sum out the discrete state sequence $X_{1:T}$. The marginalization is computationally feasible through the Forward Algorithm, a method which exploits the Markov property to compute the marginal likelihood recursively in a single pass through the data. This method reduces the complexity from O(2T){O}(2^T) to {O}(T). A full derivation of the Forward Algorithm and its log-space implementation is provided in the Appendix.
 
 Therefore the final marginalized log likelihood as computed as follows:
 
@@ -84,16 +117,15 @@ $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) 
 
 All computations are performed in log-space using Stan's numerically stable \texttt{log\_sum\_exp} function to prevent floating-point underflow.
 
-## Variational Inference
+### Variational Inference
 
-We additionally fit both the HMM and HHMM using Variational Inference (VI). This approach is intended to evaluate the tradeoff between inferential accuracy and computational efficiency. Rather than sampling from the true posterior like HMC, VI reframes inference as an optimization problem. Specifically, we seek the distribution $q^*_\phi \in \mathscr{Q}$ that most closely approximates the true posterior $\pi(x)$, as measured by the KL divergence:
+We additionally fit both HMM and Hierarchical HMM models using Variational Inference (VI). This approach is intended to evaluate the tradeoff between inferential accuracy and computational efficiency in our methods. Rather than sampling from the true posterior like HMC, VI reframes inference as an optimization problem. Specifically, we seek the distribution $q^*_\phi \in {Q}$ that most closely approximates the true posterior $\pi(x)$, as measured by the KL divergence:
 
 $$q^*_\phi = \arg\min_{\phi} \text{KL}(q_\phi \| \pi)$$
 
-We adopt the meanfield variational family, which approximates the posterior using a 
-multivariate normal distribution with a diagonal covariance matrix.
+We adopt the meanfield variational family, which approximates the posterior using a multivariate normal distribution with a diagonal covariance matrix. The design of our Stan model $\sigma_2 = \sigma_1 + \sigma_{diff}$ encodes the primary parameter relationships directly, making the meanfield independence assumption reasonable for our model.
 
-## Section III: Implmentation of HMM
+## Section II: Implmentation of HMM and Hierarchical HMM
 
 ```{r message=FALSE, echo=FALSE, warning=FALSE}
 project_tickers <- c("^GSPC")
@@ -118,8 +150,6 @@ weekly_log_returns <- weekly_returns %>%
   ) %>%
   filter(!is.na(log_return)) %>%
   select(symbol, date, adjusted, log_return)
-
-head(weekly_log_returns)
 ```
 
 ```{r message=FALSE, echo=FALSE, warning=FALSE}
@@ -405,31 +435,6 @@ bind_rows(data_hmc, data_vi) %>%
   )
 ```
 
-## Hierarchical Hidden Markov Model (Model 2)
-
-While our baseline HMM successfully captures discrete regime shifts, relying on fixed parameters (such as $\sigma_i \sim \text{Exponential}(1)$) introduces a vulnerability: the posterior may be overly sensitive to these rigid prior assumptions. To mitigate this and capture the true scale of market volatility driven by the data, we introduce a Hierarchical Hidden Markov Model (HHMM). 
-
-Because weekly log returns are practically indistinguishable from zero and a "crisis" is defined primarily by an explosion in variance rather than a shift in the mean, we simplify the emission model by assuming a constant global mean of 0 across both states, same as in our simple model. This isolates the regime-switching mechanics entirely on the market volatility.
-
-### Hierarchical Parameter Definitions
-
-The observed weekly log returns are modeled with a mean of 0 and state-dependent hierarchical variances:
-$$Y_t \mid X_t = i \sim \mathcal{N}(0, \sigma_i^2)$$
-
-Rather than fixing the rate of the Exponential prior, we introduce a hyperparameter $\lambda$ drawn from a Gamma distribution:
-$$\lambda \sim \text{Gamma}(2, 0.1)$$
-$$\sigma_1 \sim \text{Exponential}(\lambda)$$
-$$\sigma_2 \sim \text{Exponential}(\lambda) \quad \text{subject to } \sigma_2 > \sigma_1$$
-
-$$P_{11} \sim \text{Beta}(50, 2)$$
-
-$$P_{22} \sim \text{Beta}(20, 2)$$
-
-We chose these beta priors because we want market regimes to be sticky (hard to transition from calm to crisis). The crisis should be less persistent, because the world actively works to come out of a crisis. 
-
-### Justification of Priors and Constraints
-
-The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because it is the conjugate prior of the exponential distribution. Since an Exponential distribution has its mode strictly at zero, using a Gamma shape parameter of $\alpha = 2$ introduces a gentle peak that mathematically pushes the variance away from zero. Furthermore, because the rate parameter acts as an inverse scale, setting it to $\beta = 0.1$ spreads the probability mass out over a wide, flat tail. This provides a weakly informative prior that allows the true, extreme volatility of events like the 2008 Financial Crisis and the COVID-19 crash to be driven by the data rather than prior bias. Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve "label switching," just as in our naive model.
 
 ### Implmentation of HHMM
 
@@ -724,7 +729,7 @@ By factoring the joint distribution into the initial state probabilities $\pi$, 
 
 $$p(Y_{1:T} | \theta, P) = \sum_{x_1=1}^2 \dots \sum_{x_T=1}^2 \left[ \pi_{x_1} p(Y_1 | \mu_{x_1}, \sigma_{x_1}^2) \prod_{t=2}^T P_{x_{t-1}, x_t} p(Y_t | \mu_{x_t}, \sigma_{x_t}^2) \right]$$
 
-This exhaustive summation involves $2^T$ unique possible paths. Computing this $\mathcal{O}(2^T)$ sum at every MCMC step is computationally expensive.
+This exhaustive summation involves $2^T$ unique possible paths. Computing this ${O}(2^T)$ sum at every MCMC step is computationally expensive.
 
 To resolve this computational bottleneck, we utilize the Forward Algorithm. The Forward Algorithm is a dynamic programming approach that relies on the conditional independence of the HMM. Instead of calculating the probability of every single distinct path from week 1 to week $T$ independently, the algorithm calculates the probability sequentially and caches the intermediate results. 
 
@@ -749,7 +754,7 @@ At the final week $T$, the algorithm has compressed the $2^T$ paths into just tw
 
 $$L(\theta, P ; Y_{1:T}) = p(Y_{1:T} | \theta, P) = \sum_{j=1}^2 \alpha_T(j)$$
 
-This reduces the time complexity from $\mathcal{O}(2^T)$ to $\mathcal{O}(T)$.
+This reduces the time complexity from ${O}(2^T)$ to ${O}(T)$.
 
 ### Log-Space Implementation
 
@@ -792,5 +797,3 @@ Once both the forward ($\alpha$) and backward ($\beta$) passes are complete, we 
 $$\gamma_t(j) = P(X_t = j \mid Y_{1:T}) = \frac{\alpha_t(j) \beta_t(j)}{\sum_{i=1}^2 \alpha_t(i) \beta_t(i)}$$
 
 By incorporating the backward pass, the model gains the benefit of hindsight. It can look ahead at the future trajectory of the S&P 500 to determine whether a sudden drop was a brief, one-week anomaly or the beginning of a sustained structural crash like the 2008 Financial Crisis.
-
-
