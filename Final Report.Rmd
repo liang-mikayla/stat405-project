@@ -238,127 +238,125 @@ data.frame(
 as.data.frame(fit_hmc_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
-<!-- ### HMM Diagnostic Plots -->
+### HMM Diagnostic Plots
 
-<!-- ```{r} -->
-<!-- params_naive <- c("P11", "P22", "sigma_1", "sigma_2") -->
+```{r}
+params_naive <- c("P11", "P22", "sigma_1", "sigma_2")
 
-<!-- mcmc_trace(fit_hmc_hmm$draws(params_naive)) + -->
-<!--   ggtitle("Trace Plots: Naive HMM") + -->
-<!--   theme_minimal() -->
+mcmc_trace(fit_hmc_hmm$draws(params_naive)) +
+  ggtitle("Trace Plots: Naive HMM") +
+  theme_minimal()
 
-<!-- mcmc_rank_hist(fit_hmc_hmm$draws(params_naive)) + -->
-<!--   ggtitle("Rank Histograms: Naive HMM") + -->
-<!--   theme_minimal()  -->
-<!-- ``` -->
-
-
-<!-- ```{r message=FALSE} -->
-<!-- set.seed(405) -->
-<!-- n_sims <- 100 -->
-<!-- T_sim <- nrow(returns)  -->
-<!-- true_mu <- 0 -->
-<!-- true_sigma <- c(0.015, 0.040) -->
-<!-- true_P <- matrix(c(0.95, 0.05, 0.10, 0.90), nrow = 2, byrow = TRUE) -->
-
-<!-- coverage_results <- data.frame( -->
-<!--   P11_captured = logical(n_sims), -->
-<!--   P22_captured = logical(n_sims), -->
-<!--   sigma1_captured = logical(n_sims), -->
-<!--   sigma2_captured = logical(n_sims) -->
-<!-- ) -->
-
-<!-- cat("Starting 100 simulations... This will take a few minutes.\n") -->
-
-<!-- for (i in 1:n_sims) { -->
-<!--   true_states <- numeric(T_sim) -->
-<!--   true_states[1] <- 1 -->
-<!--   for (t in 2:T_sim) { -->
-<!--     true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ]) -->
-<!--   } -->
-
-<!--   simulated_Y <- numeric(T_sim) -->
-<!--   for (t in 1:T_sim) { -->
-<!--     simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]]) -->
-<!--   } -->
-
-<!--   fit_sim <- model_hmm$sample( -->
-<!--     data = list(T = T_sim, Y = simulated_Y),  -->
-<!--     chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE -->
-<!--   ) -->
-
-<!--   draws <- fit_sim$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix") -->
-<!--   cis <- apply(draws, 2, quantile, probs = c(0.05, 0.95)) -->
-
-<!--   coverage_results$P11_captured[i] <- true_P[1,1] >= cis[1, "P11"] && true_P[1,1] <= cis[2, "P11"] -->
-<!--   coverage_results$P22_captured[i] <- true_P[2,2] >= cis[1, "P22"] && true_P[2,2] <= cis[2, "P22"] -->
-<!--   coverage_results$sigma1_captured[i] <- true_sigma[1] >= cis[1, "sigma_1"] && true_sigma[1] <= cis[2, "sigma_1"] -->
-<!--   coverage_results$sigma2_captured[i] <- true_sigma[2] >= cis[1, "sigma_2"] && true_sigma[2] <= cis[2, "sigma_2"] -->
-
-<!--   if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n") -->
-<!-- } -->
-
-<!-- cat("\n--- 100-RUN CALIBRATION RESULTS ---\n") -->
-<!-- print(colMeans(coverage_results)) -->
-<!-- ``` -->
-
-<!-- ```{r} -->
-<!-- cat("\n--- 100-RUN CALIBRATION RESULTS ---\n") -->
-<!-- print(colMeans(coverage_results)) -->
-<!-- ``` -->
+mcmc_rank_hist(fit_hmc_hmm$draws(params_naive)) +
+  ggtitle("Rank Histograms: Naive HMM") +
+  theme_minimal()
+```
 
 
+```{r message=FALSE}
+set.seed(405)
+n_sims <- 100
+T_sim <- nrow(returns)
+true_mu <- 0
+true_sigma <- c(0.015, 0.040)
+true_P <- matrix(c(0.95, 0.05, 0.10, 0.90), nrow = 2, byrow = TRUE)
+
+coverage_results <- data.frame(
+  P11_captured = logical(n_sims),
+  P22_captured = logical(n_sims),
+  sigma1_captured = logical(n_sims),
+  sigma2_captured = logical(n_sims)
+)
+
+cat("Starting 100 simulations... This will take a few minutes.\n")
+
+for (i in 1:n_sims) {
+  true_states <- numeric(T_sim)
+  true_states[1] <- 1
+  for (t in 2:T_sim) {
+    true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ])
+  }
+
+  simulated_Y <- numeric(T_sim)
+  for (t in 1:T_sim) {
+    simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]])
+  }
+
+  fit_sim <- model_hmm$sample(
+    data = list(T = T_sim, Y = simulated_Y),
+    chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE
+  )
+
+  draws <- fit_sim$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix")
+  cis <- apply(draws, 2, quantile, probs = c(0.05, 0.95))
+
+  coverage_results$P11_captured[i] <- true_P[1,1] >= cis[1, "P11"] && true_P[1,1] <= cis[2, "P11"]
+  coverage_results$P22_captured[i] <- true_P[2,2] >= cis[1, "P22"] && true_P[2,2] <= cis[2, "P22"]
+  coverage_results$sigma1_captured[i] <- true_sigma[1] >= cis[1, "sigma_1"] && true_sigma[1] <= cis[2, "sigma_1"]
+  coverage_results$sigma2_captured[i] <- true_sigma[2] >= cis[1, "sigma_2"] && true_sigma[2] <= cis[2, "sigma_2"]
+
+  if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n")
+}
+
+cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
+print(colMeans(coverage_results))
+```
+
+```{r}
+cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
+print(colMeans(coverage_results))
+```
 
 
-## LOO
-<!-- ```{r message = FALSE} -->
-<!-- subset_returns <- tail(returns, 300)  -->
-<!-- n_total_subset <- nrow(subset_returns) -->
-<!-- test_weeks <- 50  -->
+## LOO Goodness-of-Fit
+```{r message = FALSE}
+subset_returns <- tail(returns, 300)
+n_total_subset <- nrow(subset_returns)
+test_weeks <- 50
 
-<!-- results_list <- list() -->
+results_list <- list()
 
-<!-- cat("Starting 50 rolling LOO predictions...\n") -->
+cat("Starting 50 rolling LOO predictions...\n")
 
-<!-- for (i in test_weeks:1) { -->
-<!--   current_T <- n_total_subset - i -->
-<!--   actual_y <- subset_returns$log_return[current_T + 1] -->
+for (i in test_weeks:1) {
+  current_T <- n_total_subset - i
+  actual_y <- subset_returns$log_return[current_T + 1]
 
-<!--   # Package the truncated data up to current_T -->
-<!--   stan_data_loo <- list( -->
-<!--     T = current_T, -->
-<!--     Y = subset_returns$log_return[1:current_T] -->
-<!--   ) -->
+  # Package the truncated data up to current_T
+  stan_data_loo <- list(
+    T = current_T,
+    Y = subset_returns$log_return[1:current_T]
+  )
 
-<!--   # Fit the model -->
-<!--   fit_loop <- model_hmm$sample( -->
-<!--     data = stan_data_loo,  -->
-<!--     chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE -->
-<!--   ) -->
+  # Fit the model
+  fit_loop <- model_hmm$sample(
+    data = stan_data_loo,
+    chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE
+  )
 
-<!--   # Extract prediction and calculate 90% CI -->
-<!--   y_pred <- fit_loop$draws("y_predict", format = "matrix") -->
-<!--   ci <- quantile(y_pred, probs = c(0.05, 0.95)) -->
+  # Extract prediction and calculate 90% CI
+  y_pred <- fit_loop$draws("y_predict", format = "matrix")
+  ci <- quantile(y_pred, probs = c(0.05, 0.95))
 
-<!--   inside <- actual_y >= ci[1] && actual_y <= ci[2] -->
+  inside <- actual_y >= ci[1] && actual_y <= ci[2]
 
-<!--   results_list[[length(results_list) + 1]] <- data.frame( -->
-<!--     Date = subset_returns$date[current_T + 1], -->
-<!--     Actual = actual_y, -->
-<!--     CI_Lower = ci[1], -->
-<!--     CI_Upper = ci[2], -->
-<!--     Captured = inside -->
-<!--   ) -->
+  results_list[[length(results_list) + 1]] <- data.frame(
+    Date = subset_returns$date[current_T + 1],
+    Actual = actual_y,
+    CI_Lower = ci[1],
+    CI_Upper = ci[2],
+    Captured = inside
+  )
 
-<!--   if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n") -->
-<!-- } -->
+  if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n")
+}
 
-<!-- merged_loo_df <- do.call(rbind, results_list) -->
-<!-- proportion_covered <- mean(merged_loo_df$Captured) -->
+merged_loo_df <- do.call(rbind, results_list)
+proportion_covered <- mean(merged_loo_df$Captured)
 
-<!-- cat("\n--- MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n") -->
-<!-- cat("Proportion of true values inside the 90% CI:", proportion_covered, "\n") -->
-<!-- ``` -->
+cat("\n--- MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
+cat("Proportion of true values inside the 90% CI:", proportion_covered, "\n")
+```
 
 
 ### Variational Inference HMM
@@ -455,120 +453,120 @@ as.data.frame(fit_vi_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
 ### Diagnostics HHMM
-<!-- ```{r} -->
-<!-- params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2") -->
+```{r}
+params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2")
 
-<!-- mcmc_trace(fit_hmc_hhmm$draws(params_hhmm)) + -->
-<!--   ggtitle("Trace Plots: Hierarchical HMM") + -->
-<!--   theme_minimal() -->
+mcmc_trace(fit_hmc_hhmm$draws(params_hhmm)) +
+  ggtitle("Trace Plots: Hierarchical HMM") +
+  theme_minimal()
 
-<!-- mcmc_rank_hist(fit_hmc_hhmm$draws(params_hhmm)) + -->
-<!--   ggtitle("Rank Histograms: Hierarchical HMM") + -->
-<!--   theme_minimal() -->
-<!-- ``` -->
+mcmc_rank_hist(fit_hmc_hhmm$draws(params_hhmm)) +
+  ggtitle("Rank Histograms: Hierarchical HMM") +
+  theme_minimal()
+```
 
-<!-- ### Correctness check HHMM -->
+### Correctness check HHMM
 
-<!-- ```{r message=FALSE} -->
-<!-- set.seed(405) -->
+```{r message=FALSE}
+set.seed(405)
 
-<!-- coverage_results_hierarchical <- data.frame( -->
-<!--   P11_captured = logical(n_sims), -->
-<!--   P22_captured = logical(n_sims), -->
-<!--   sigma1_captured = logical(n_sims), -->
-<!--   sigma2_captured = logical(n_sims) -->
-<!-- ) -->
+coverage_results_hierarchical <- data.frame(
+  P11_captured = logical(n_sims),
+  P22_captured = logical(n_sims),
+  sigma1_captured = logical(n_sims),
+  sigma2_captured = logical(n_sims)
+)
 
-<!-- cat("Starting 100 simulations for Hierarchical Model... This will take a few minutes.\n") -->
+cat("Starting 100 simulations for Hierarchical Model... This will take a few minutes.\n")
 
-<!-- for (i in 1:n_sims) { -->
-<!--   true_states_hhmm <- numeric(T_sim) -->
-<!--   true_states_hhmm[1] <- 1 -->
-<!--   for (t in 2:T_sim) { -->
-<!--     true_states_hhmm[t] <- sample(1:2, size = 1, prob = true_P[true_states_hhmm[t-1], ]) -->
-<!--   } -->
+for (i in 1:n_sims) {
+  true_states_hhmm <- numeric(T_sim)
+  true_states_hhmm[1] <- 1
+  for (t in 2:T_sim) {
+    true_states_hhmm[t] <- sample(1:2, size = 1, prob = true_P[true_states_hhmm[t-1], ])
+  }
 
-<!--   simulated_Y_hhmm <- numeric(T_sim) -->
-<!--   for (t in 1:T_sim) { -->
-<!--     simulated_Y_hhmm[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states_hhmm[t]]) -->
-<!--   } -->
+  simulated_Y_hhmm <- numeric(T_sim)
+  for (t in 1:T_sim) {
+    simulated_Y_hhmm[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states_hhmm[t]])
+  }
 
-<!--   fit_sim_hierarchical <- model_hierarchical$sample( -->
-<!--     data = list(T = T_sim, Y = simulated_Y_hhmm),  -->
-<!--     chains = 4,  -->
-<!--     parallel_chains = 4,  -->
-<!--     adapt_delta = 0.95, # Crucial for hierarchical models -->
-<!--     refresh = 0,  -->
-<!--     show_messages = FALSE -->
-<!--   ) -->
+  fit_sim_hierarchical <- model_hierarchical$sample(
+    data = list(T = T_sim, Y = simulated_Y_hhmm),
+    chains = 4,
+    parallel_chains = 4,
+    adapt_delta = 0.95, # Crucial for hierarchical models
+    refresh = 0,
+    show_messages = FALSE
+  )
 
-<!--   draws_hierarchical <- fit_sim_hierarchical$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix") -->
-<!--   cis_hierarchical <- apply(draws_hierarchical, 2, quantile, probs = c(0.05, 0.95)) -->
+  draws_hierarchical <- fit_sim_hierarchical$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix")
+  cis_hierarchical <- apply(draws_hierarchical, 2, quantile, probs = c(0.05, 0.95))
 
-<!--   coverage_results_hierarchical$P11_captured[i] <- true_P[1,1] >= cis_hierarchical[1, "P11"] && true_P[1,1] <= cis_hierarchical[2, "P11"] -->
-<!--   coverage_results_hierarchical$P22_captured[i] <- true_P[2,2] >= cis_hierarchical[1, "P22"] && true_P[2,2] <= cis_hierarchical[2, "P22"] -->
-<!--   coverage_results_hierarchical$sigma1_captured[i] <- true_sigma[1] >= cis_hierarchical[1, "sigma_1"] && true_sigma[1] <= cis_hierarchical[2, "sigma_1"] -->
-<!--   coverage_results_hierarchical$sigma2_captured[i] <- true_sigma[2] >= cis_hierarchical[1, "sigma_2"] && true_sigma[2] <= cis_hierarchical[2, "sigma_2"] -->
+  coverage_results_hierarchical$P11_captured[i] <- true_P[1,1] >= cis_hierarchical[1, "P11"] && true_P[1,1] <= cis_hierarchical[2, "P11"]
+  coverage_results_hierarchical$P22_captured[i] <- true_P[2,2] >= cis_hierarchical[1, "P22"] && true_P[2,2] <= cis_hierarchical[2, "P22"]
+  coverage_results_hierarchical$sigma1_captured[i] <- true_sigma[1] >= cis_hierarchical[1, "sigma_1"] && true_sigma[1] <= cis_hierarchical[2, "sigma_1"]
+  coverage_results_hierarchical$sigma2_captured[i] <- true_sigma[2] >= cis_hierarchical[1, "sigma_2"] && true_sigma[2] <= cis_hierarchical[2, "sigma_2"]
 
-<!--   if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n") -->
-<!-- } -->
+  if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n")
+}
 
-<!-- cat("\n--- HIERARCHICAL 100-RUN CALIBRATION RESULTS ---\n") -->
-<!-- print(colMeans(coverage_results_hierarchical)) -->
-<!-- ``` -->
+cat("\n--- HIERARCHICAL 100-RUN CALIBRATION RESULTS ---\n")
+print(colMeans(coverage_results_hierarchical))
+```
 
 
 ### LOO Goodness of fit
 
-<!-- ```{r message=FALSE} -->
-<!-- subset_returns_hhmm <- tail(returns, 300)  -->
-<!-- n_total_subset_hhmm <- nrow(subset_returns_hhmm) -->
-<!-- test_weeks_hhmm <- 50  -->
+```{r message=FALSE}
+subset_returns_hhmm <- tail(returns, 300)
+n_total_subset_hhmm <- nrow(subset_returns_hhmm)
+test_weeks_hhmm <- 50
 
-<!-- results_list_hierarchical <- list() -->
+results_list_hierarchical <- list()
 
-<!-- cat("Starting 50 rolling LOO predictions for Hierarchical Model...\n") -->
+cat("Starting 50 rolling LOO predictions for Hierarchical Model...\n")
 
-<!-- for (i in test_weeks_hhmm:1) { -->
-<!--   current_T_hhmm <- n_total_subset_hhmm - i -->
-<!--   actual_y_hhmm <- subset_returns_hhmm$log_return[current_T_hhmm + 1] -->
+for (i in test_weeks_hhmm:1) {
+  current_T_hhmm <- n_total_subset_hhmm - i
+  actual_y_hhmm <- subset_returns_hhmm$log_return[current_T_hhmm + 1]
 
-<!--   stan_data_loo_hierarchical <- list( -->
-<!--     T = current_T_hhmm, -->
-<!--     Y = subset_returns_hhmm$log_return[1:current_T_hhmm] -->
-<!--   ) -->
+  stan_data_loo_hierarchical <- list(
+    T = current_T_hhmm,
+    Y = subset_returns_hhmm$log_return[1:current_T_hhmm]
+  )
 
-<!--   fit_loop_hierarchical <- model_hierarchical$sample( -->
-<!--     data = stan_data_loo_hierarchical,  -->
-<!--     chains = 4,  -->
-<!--     parallel_chains = 4,  -->
-<!--     adapt_delta = 0.95, -->
-<!--     refresh = 0,  -->
-<!--     show_messages = FALSE -->
-<!--   ) -->
+  fit_loop_hierarchical <- model_hierarchical$sample(
+    data = stan_data_loo_hierarchical,
+    chains = 4,
+    parallel_chains = 4,
+    adapt_delta = 0.95,
+    refresh = 0,
+    show_messages = FALSE
+  )
 
-<!--   y_pred_hierarchical <- fit_loop_hierarchical$draws("y_predict", format = "matrix") -->
-<!--   ci_hierarchical <- quantile(y_pred_hierarchical, probs = c(0.05, 0.95)) -->
+  y_pred_hierarchical <- fit_loop_hierarchical$draws("y_predict", format = "matrix")
+  ci_hierarchical <- quantile(y_pred_hierarchical, probs = c(0.05, 0.95))
 
-<!--   inside_hhmm <- actual_y_hhmm >= ci_hierarchical[1] && actual_y_hhmm <= ci_hierarchical[2] -->
+  inside_hhmm <- actual_y_hhmm >= ci_hierarchical[1] && actual_y_hhmm <= ci_hierarchical[2]
 
-<!--   results_list_hierarchical[[length(results_list_hierarchical) + 1]] <- data.frame( -->
-<!--     Date = subset_returns_hhmm$date[current_T_hhmm + 1], -->
-<!--     Actual = actual_y_hhmm, -->
-<!--     CI_Lower = ci_hierarchical[1], -->
-<!--     CI_Upper = ci_hierarchical[2], -->
-<!--     Captured = inside_hhmm -->
-<!--   ) -->
+  results_list_hierarchical[[length(results_list_hierarchical) + 1]] <- data.frame(
+    Date = subset_returns_hhmm$date[current_T_hhmm + 1],
+    Actual = actual_y_hhmm,
+    CI_Lower = ci_hierarchical[1],
+    CI_Upper = ci_hierarchical[2],
+    Captured = inside_hhmm
+  )
 
-<!--   if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n") -->
-<!-- } -->
+  if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n")
+}
 
-<!-- merged_loo_df_hierarchical <- do.call(rbind, results_list_hierarchical) -->
-<!-- proportion_covered_hierarchical <- mean(merged_loo_df_hierarchical$Captured) -->
+merged_loo_df_hierarchical <- do.call(rbind, results_list_hierarchical)
+proportion_covered_hierarchical <- mean(merged_loo_df_hierarchical$Captured)
 
-<!-- cat("\n--- HIERARCHICAL MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n") -->
-<!-- cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n") -->
-<!-- ``` -->
+cat("\n--- HIERARCHICAL MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
+cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n")
+```
 
 
 ## Discussion
