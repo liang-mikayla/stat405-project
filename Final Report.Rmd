@@ -98,7 +98,7 @@ $$P_{22} \sim \text{Beta}(20, 2)$$
 We chose these beta priors because we want market regimes to be sticky (hard to transition from calm to crisis). The crisis should be less persistent, because the world actively works to come out of a crisis. 
 
 #### Justification of Priors and Constraints
-
+\
 The selection of the prior $\lambda \sim \text{Gamma}(2, 0.1)$ is because it is the conjugate prior of the exponential distribution. Since an Exponential distribution has its mode strictly at zero, using a Gamma shape parameter of $\alpha = 2$ introduces a gentle peak that mathematically pushes the variance away from zero. Furthermore, because the rate parameter acts as an inverse scale, setting it to $\beta = 0.1$ spreads the probability mass out over a wide, flat tail. This provides a weakly informative prior that allows the true, extreme volatility of events like the 2008 Financial Crisis and the COVID-19 crash to be driven by the data rather than prior bias. Finally, the explicit ordering constraint ($\sigma_2 > \sigma_1$) is mathematically required to resolve "label switching," just as in our naive model.
 
 ### Hamiltonian Monte Carlo (HMC)
@@ -117,7 +117,7 @@ $$\log L(\theta, P ; Y_{1:T}) = \log \left( \sum_{j=1}^2 \exp(\log \alpha_T(j)) 
 
 All computations are performed in log-space using Stan's numerically stable \texttt{log\_sum\_exp} function to prevent floating-point underflow.
 
-### Variational Inference
+### Variational Inference (VI)
 
 We additionally fit both HMM and Hierarchical HMM models using Variational Inference (VI). This approach is intended to evaluate the tradeoff between inferential accuracy and computational efficiency in our methods. Rather than sampling from the true posterior like HMC, VI reframes inference as an optimization problem. Specifically, we seek the distribution $q^*_\phi \in {Q}$ that most closely approximates the true posterior $\pi(x)$, as measured by the KL divergence:
 
@@ -171,7 +171,8 @@ fit_hmc_hmm <- model_hmm$sample(
   iter_sampling = 1000,
   adapt_delta = 0.95,
   seed = 405,
-  refresh = 0
+  refresh = 0,
+  show_messages = FALSE
 )
 
 model_hierarchical <- cmdstan_model("hhmm_volatility.stan")
@@ -189,12 +190,13 @@ fit_hmc_hhmm <- model_hierarchical$sample(
   iter_sampling = 1000,
   adapt_delta = 0.95,
   seed = 405,
-  refresh = 0
+  refresh = 0,
+  show_messages = FALSE
 )
 ```
 
 
-```{r}
+```{r, echo = FALSE, warning = FALSE, message=FALSE}
 prob_crisis_draws <- fit_hmc_hmm$draws("prob_crisis", format = "matrix")
 
 mean_prob_crisis <- colMeans(prob_crisis_draws)
@@ -236,10 +238,6 @@ data.frame(
 as.data.frame(fit_hmc_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
-Both the baseline and hierarchical Hidden Markov Models successfully identified two distinct market environments within the S&P 500 log returns, demonstrating remarkable parameter robustness across both architectures. In both models, the normal growth state (State 1) is characterized by a low weekly volatility of approximately 1.62% and exhibits extreme persistence, with a 97.0% to 97.2% probability ($P_{11}$) of remaining in this stable environment week-over-week. Conversely, the crisis regime (State 2) shows a massive volatility jump to approximately 4.08% to 4.11% per week, which is roughly 2.5 times higher than the baseline. This crisis state has a slightly lower persistence ($P_{22}$ ranging from 0.909 to 0.916), reflecting the economic reality that while financial panics are sustained, intensely volatile events, they typically resolve faster than prolonged periods of normal market growth. The smoothed probability plot for the hierarchical model confirms these findings by clearly pinning the probability of a crisis at 1.00 during major economic shocks like the 2008 financial crisis and the 2020 COVID-19 crash. However, the jittery behavior still continues, which further highlights the binary model's tendency to switch rapidly when attempting to classify more moderate periods of market turbulence.
-
-The near-identical recovery of the parameter values across both models is a strong indicator of parameter robustness. Despite the hierarchical model introducing a more complex prior structure, both models converged on essentially the same baseline and crisis volatility scales. This striking similarity suggests that the likelihood signal from the S&P 500 data is exceptionally strong, effectively overwhelming the structural differences between the flat and hierarchical priors.
-
 <!-- ### HMM Diagnostic Plots -->
 
 <!-- ```{r} -->
@@ -254,7 +252,6 @@ The near-identical recovery of the parameter values across both models is a stro
 <!--   theme_minimal()  -->
 <!-- ``` -->
 
-<!-- ### Correctness Check With Synthetic Data Model I -->
 
 <!-- ```{r message=FALSE} -->
 <!-- set.seed(405) -->
@@ -310,10 +307,10 @@ The near-identical recovery of the parameter values across both models is a stro
 <!-- print(colMeans(coverage_results)) -->
 <!-- ``` -->
 
-To validate the computational correctness of our baseline model, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic datasets matching the full length of our sample. For a 90% credible interval, a properly calibrated model should capture the true parameters approximately 90% of the time. Our empirical coverage results were 0.91 for $P_{11}$, 0.92 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. While $\sigma_1$ and $\sigma_2$ sit slightly below the nominal 0.90 target, this deviation is entirely expected due to Monte Carlo error. With 100 simulations, the binomial standard deviation for a 90% probability is roughly 3%, meaning any result between 0.87 and 0.93 is within normal statistical noise. Because the coverage for all four parameters falls within this expected range, we can conclude that our Stan implementation is software defect-free for our simple Hidden Markov Model.
 
-<!-- ### Leave One Out Goodness of Fit Check HMM Model -->
 
+
+## LOO
 <!-- ```{r message = FALSE} -->
 <!-- subset_returns <- tail(returns, 300)  -->
 <!-- n_total_subset <- nrow(subset_returns) -->
@@ -363,30 +360,26 @@ To validate the computational correctness of our baseline model, we performed a 
 <!-- cat("Proportion of true values inside the 90% CI:", proportion_covered, "\n") -->
 <!-- ``` -->
 
-To check the goodness of fit and out-of-sample prediction of the baseline model, we expanded our posterior predictive check to a rolling Leave-One-Out (LOO) cross-validation over a 50-week period. We chose a 50-week period in order to keep the computational times lower. To preserve the sequential dependence of the Hidden Markov Model, we iteratively truncated the time series at a moving boundary $t$, requiring the model to generate a one-step-ahead forecast for week $t+1$ using only strictly historical data (where $t$ ranges over the final 50 weeks of our dataset, terminating at $T-1$).
-
-For each of the 50 iterations, we computed the 90% posterior predictive credible interval for the unobserved log return. Our results yielded a coverage proportion of 0.94 (capturing 47 of the 50 out-of-sample weeks).
-
-The uncertainty bounds generated by the $\text{Exponential}(1)$ prior and Normal emission distributions were wide enough to account for the realized market volatility over the 50-week test period. This confirms that the baseline HMM does not suffer from gross mis-specification during standard market regimes and provides reliable predictive bounds for near-term forecasting.
 
 ### Variational Inference HMM
 
-``` {r message=FALSE}
+``` {r message=FALSE, echo = FALSE, warning = FALSE}
 fit_vi_hmm <- model_hmm$variational(
   data = stan_data,
   seed = 405,
   algorithm = "meanfield",
   output_samples = 1000,
-  refresh = 0
+  refresh = 0,
+  show_messages = FALSE
 )
 ```
 
-``` {r}
+``` {r,message=FALSE, echo = FALSE, warning = FALSE}
 prob_crisis_draws_vi_hier <- fit_vi_hmm$draws("prob_crisis", format = "matrix")
 mean_prob_crisis_vi_hier <- colMeans(prob_crisis_draws_vi_hier)
 
 data.frame(
-  date = gspc_returns$date,
+  date = returns$date,
   prob = mean_prob_crisis_vi_hier
 ) %>%
   ggplot(aes(x = date, y = prob)) +
@@ -401,11 +394,11 @@ data.frame(
 as.data.frame(fit_vi_hmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
-```{r}
+```{r,message=FALSE, echo = FALSE, warning = FALSE}
 # code modified from "Advanced Inference - VI with Stan" lecture
 sel <- c("P11", "P22", "sigma_1", "sigma_2")
 
-data_hmc <- mcmc_intervals_data(fit_hmm$draws(variables = sel)) %>%
+data_hmc <- mcmc_intervals_data(fit_hmc_hmm$draws(variables = sel)) %>%
   mutate(method = "HMC")
 
 data_vi <- mcmc_intervals_data(fit_vi_hmm$draws(variables = sel)) %>%
@@ -430,31 +423,30 @@ bind_rows(data_hmc, data_vi) %>%
 ```
 
 
-### Variational Inference HHMM
-
 ``` {r message=FALSE, echo=FALSE}
 fit_vi_hhmm <- model_hierarchical$variational(
   data = stan_data_hierarchical,
   seed = 405,
   algorithm = "meanfield",
   output_samples = 1000,
-  refresh = 0
+  refresh = 0,
+  show_messages = FALSE
 )
 ```
 
-``` {r}
+``` {r, echo = FALSE, warning = FALSE, message=FALSE}
 prob_crisis_draws_vi_hier <- fit_vi_hhmm$draws("prob_crisis", format = "matrix")
 mean_prob_crisis_vi_hier <- colMeans(prob_crisis_draws_vi_hier)
 
 data.frame(
-  date = gspc_returns$date,
+  date = returns$date,
   prob = mean_prob_crisis_vi_hier
   ) %>%
   ggplot(aes(x = date, y = prob)) +
   geom_line(color = "steelblue") +
   theme_minimal() +
   labs(
-    title = "Probability of Market Crisis Regime (Hierarchical Model)",
+    title = "Probability of Market Crisis Regime (VI Hierarchical Model)",
     x = "Date",
     y = "Probability"
   )
@@ -462,8 +454,7 @@ data.frame(
 as.data.frame(fit_vi_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
-<!-- ### Diagnostics HHMM -->
-
+### Diagnostics HHMM
 <!-- ```{r} -->
 <!-- params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2") -->
 
@@ -526,9 +517,8 @@ as.data.frame(fit_vi_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 <!-- print(colMeans(coverage_results_hierarchical)) -->
 <!-- ``` -->
 
-To evaluate the computational correctness of the Hierarchical Hidden Markov Model and rule out software defects, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic data matching our sample length. The empirical coverage results were 0.88 for $P_{11}$, 0.89 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. All four parameter coverages fall within the expected binomial margin of error for 100 simulations (roughly $\pm 3\%$). This confirms that the hierarchical priors are correctly implemented.
 
-<!-- ### LOO Goodness of fit  -->
+### LOO Goodness of fit
 
 <!-- ```{r message=FALSE} -->
 <!-- subset_returns_hhmm <- tail(returns, 300)  -->
@@ -580,9 +570,6 @@ To evaluate the computational correctness of the Hierarchical Hidden Markov Mode
 <!-- cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n") -->
 <!-- ``` -->
 
-To evaluate the goodness of fit and out-of-sample predictive calibration of the Hierarchical Hidden Markov Model, we did the same procedure as with the simple model. The hierarchical model yielded an empirical coverage proportion of 0.92 (capturing 46 of the 50 out-of-sample weeks). This result indicates good model calibration, matching the nominal 90% target even more closely than the baseline model.
-
-TODO: [Insert Comparison for HHMM]
 
 ## Discussion
 
@@ -603,6 +590,28 @@ Model currently has geometric waiting times (this is solved by having more state
 While the Hierarchical Hidden Markov Model (HHMM) successfully captures broad market regimes and provides well-calibrated out-of-sample forecasts, its reliance on a strict binary state space ($X_t \in \{1, 2\}$) introduces structural limitations. In our current architecture, the model is forced into an "all-or-nothing problem, attempting to classify every trading week as either perfectly normal or a total crisis. Because the transition waiting times are geometrically distributed, the model assumes the probability of exiting a market regime decays rigidly over time. This results in our model oscillating between the crisis and calm state.
 
 A solution to this problem would be expanding the latent state space to a four-state model ($X_t \in \{1, 2, 3, 4\}$) with explicit macroeconomic interpretations: Severe Crisis, Mild Crisis (or market correction), Normal Growth, and Extreme Growth (or bull run). This expansion allows the model to capture a more natural life cycle of a financial regime, instead of having a black or white rigid approach to categorizing. For example, a market could transition from Extreme Growth into a Mild Crisis before cascading into a Severe Crisis. Most importantly, this multi-state approach could possibly resolve the geometric waiting time limitation for broader economic cycles.
+
+### Correctness Check With Synthetic Data HMM Model
+To validate the computational correctness of our baseline model, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic datasets matching the full length of our sample. For a 90% credible interval, a properly calibrated model should capture the true parameters approximately 90% of the time. Our empirical coverage results were 0.91 for $P_{11}$, 0.92 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. While $\sigma_1$ and $\sigma_2$ sit slightly below the nominal 0.90 target, this deviation is entirely expected due to Monte Carlo error. With 100 simulations, the binomial standard deviation for a 90% probability is roughly 3%, meaning any result between 0.87 and 0.93 is within normal statistical noise. Because the coverage for all four parameters falls within this expected range, we can conclude that our Stan implementation is software defect-free for our simple Hidden Markov Model.
+
+### Leave One Out Goodness of Fit Check HMM Model
+To check the goodness of fit and out-of-sample prediction of the baseline model, we expanded our posterior predictive check to a rolling Leave-One-Out (LOO) cross-validation over a 50-week period. We chose a 50-week period in order to keep the computational times lower. To preserve the sequential dependence of the Hidden Markov Model, we iteratively truncated the time series at a moving boundary $t$, requiring the model to generate a one-step-ahead forecast for week $t+1$ using only strictly historical data (where $t$ ranges over the final 50 weeks of our dataset, terminating at $T-1$).
+
+For each of the 50 iterations, we computed the 90% posterior predictive credible interval for the unobserved log return. Our results yielded a coverage proportion of 0.94 (capturing 47 of the 50 out-of-sample weeks).
+
+The uncertainty bounds generated by the $\text{Exponential}(1)$ prior and Normal emission distributions were wide enough to account for the realized market volatility over the 50-week test period. This confirms that the baseline HMM does not suffer from gross mis-specification during standard market regimes and provides reliable predictive bounds for near-term forecasting.
+
+### Leave One Out Goodness of Fit Check HHMM Model
+To evaluate the goodness of fit and out-of-sample predictive calibration of the Hierarchical Hidden Markov Model, we did the same procedure as with the simple model. The hierarchical model yielded an empirical coverage proportion of 0.92 (capturing 46 of the 50 out-of-sample weeks). This result indicates good model calibration, matching the nominal 90% target even more closely than the baseline model.
+
+### Diagnostics HHMM
+To evaluate the computational correctness of the Hierarchical Hidden Markov Model and rule out software defects, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic data matching our sample length. The empirical coverage results were 0.88 for $P_{11}$, 0.89 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. All four parameter coverages fall within the expected binomial margin of error for 100 simulations (roughly $\pm 3\%$). This confirms that the hierarchical priors are correctly implemented.
+
+
+#### HMM and HHMM
+Both the baseline and hierarchical Hidden Markov Models successfully identified two distinct market environments within the S&P 500 log returns, demonstrating remarkable parameter robustness across both architectures. In both models, the normal growth state (State 1) is characterized by a low weekly volatility of approximately 1.62% and exhibits extreme persistence, with a 97.0% to 97.2% probability ($P_{11}$) of remaining in this stable environment week-over-week. Conversely, the crisis regime (State 2) shows a massive volatility jump to approximately 4.08% to 4.11% per week, which is roughly 2.5 times higher than the baseline. This crisis state has a slightly lower persistence ($P_{22}$ ranging from 0.909 to 0.916), reflecting the economic reality that while financial panics are sustained, intensely volatile events, they typically resolve faster than prolonged periods of normal market growth. The smoothed probability plot for the hierarchical model confirms these findings by clearly pinning the probability of a crisis at 1.00 during major economic shocks like the 2008 financial crisis and the 2020 COVID-19 crash. However, the jittery behavior still continues, which further highlights the binary model's tendency to switch rapidly when attempting to classify more moderate periods of market turbulence.
+
+The near-identical recovery of the parameter values across both models is a strong indicator of parameter robustness. Despite the hierarchical model introducing a more complex prior structure, both models converged on essentially the same baseline and crisis volatility scales. This striking similarity suggests that the likelihood signal from the S&P 500 data is exceptionally strong, effectively overwhelming the structural differences between the flat and hierarchical priors.
 
 ## References
 
