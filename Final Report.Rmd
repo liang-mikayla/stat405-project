@@ -17,7 +17,7 @@ library(patchwork)
 
 ## Abstract
 
-Investor confidence is fundamentally tied to market stability, as sudden transitions into high-volatility regimes expose investors to significant risk. This study explores the use of Bayesian inference methods in detecting and predicting these volatile periods. Using historical data from Yahoo Finance spanning January 1998 to the present, the comparative models identify latent shifts in market behaviour driven by rapid economic change. [Insert results].
+Investor confidence is fundamentally tied to market stability, as sudden transitions into high-volatility regimes expose investors to significant risk. This study explores the use of Bayesian inference methods in detecting and predicting these volatile periods. Using historical data from Yahoo Finance spanning January 1998 to the present, the comparative models identify latent shifts in market behaviour driven by rapid economic change. Results indicate that both the baseline Hidden Markov Model and the Hierarchical HMM successfully identified distinct market regimes, demonstrating high parameter robustness; the empirical data provided a strong likelihood signal that effectively overwhelmed the differences in prior structures, yielding near-identical baseline and crisis volatility scales. Furthermore, our comparison of inferential methods revealed a clear tradeoff: Hamiltonian Monte Carlo (HMC) produced accurate, well-calibrated uncertainty bounds at a higher computational cost, whereas mean-field Variational Inference (VI) converged $5.7\times$ faster but sacrificed inferential precision by generating artificially narrow, under-dispersed credible intervals.
 
 ## Introduction
 
@@ -25,7 +25,7 @@ Stock market volatility poses significant challenges for investors, particularly
 
 To determine how to best capture latent shifts in the market, this study compares two Bayesian methods: a standard Hidden Markov Model (HMM) and a Hierarchical Hidden Markov Model (HHMM). The HMM models the market as switching between two latent states to capture sudden shifts in market behaviour. The HHMM extends this by introducing a hierarchical structure to the emission variances. Instead of relying on fixed priors that are highly sensitive to the scale of log returns, the HHMM uses a hyperparameter to determine the rate of volatility. This flexibility allows the model to better accommodate the "fat tails" in financial data, which prevents single-week outliers from impacting the latent state estimation and producing more accurate regime probabilities. Both models are fitted using two inferential methods: Hamiltonian Monte Carlo (HMC), which produces an accurate posterior by sampling, and Variational Inference (VI), which approximates the posterior through optimization. By applying both methods to each model, we can evaluate the tradeoff between accuracy and computational efficiency.
 
-This study spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. Additional exploration of other tickers is contained int the Appendix.
+This study spans three major stock market crises: the Dot-com Bubble, the 2008 Financial Crisis, and the 2020 COVID-19 crash. The S&P 500 Index (^GSPC) serves as the primary dataset for this study, as it is widely regarded as the most complete benchmark of U.S. equity market performance. Given that these crises were predominantly driven by U.S. market dynamics, the S&P 500 accurately reflects the desired market volatility. Additional exploration of other tickers is contained in the Appendix.
 
 ## Literature Review
 Hidden Markov Models are commonly applied to financial time series analysis and regime detection. Rabiner (1989) established the foundational algorithmic framework for HMMs, introducing the Forward-Backward algorithm that underpin modern HMM implementations. This study utilizes the Forward Algorithm introduced in Rabiner's dynamic programming formulation. Hamilton (1989) demonstrated how regime-switching models can be applied to macroeconomic time series, and showed that non-stationary economic data can be effectively modelled as transitions between discrete latent states. These works provided the theoretical motivation for applying Bayesian models to financial markets.
@@ -34,13 +34,14 @@ For frequentist volatility modelling, Engle (1982) introduced the ARCH model and
 
 Wang et al. (2020) represent the most closely related work to this study, applying a Gaussian HMM directly to S&P 500 data to identify market regimes using a frequentist Baum-Welch expectation-maximization algorithm. This study fits the same model class using Bayesian inference instead, generating uncertainty quantification and the incorporation of prior knowledge. We extend this framework to a Hierarchical HMM and address the prior sensitivity limitations present in the standard model.
 
-The remainder of this study is structured as follows. Section I describes the data collection process, and defines the two Bayesian models and inferential methods used in the analysis. Section III presents the implementation and results of each model, including parameter estimates and regime probability visualizations. Section IV discusses the comparative findings, and Section V states the conclusions of the study.
+The remainder of this study is structured as follows. The methodology section describes the data collection process, and defines the two Bayesian models and inferential methods used in the analysis. The Results and Discussion section presents the implementation and results of each model, including parameter estimates and regime probability visualizations, and discusses the comparative findings.
 
-## Section I: Methodology
+## Methodology
 
 ### Research Objectives
-The key objective of this study is to investigate the following: between discrete regime shifts (HMM) and continuous volatility evolution (Stochastic Volatility), which framework better explains the market dynamics during the Dot-com bubble, the 2008 Financial Crisis and the COVID-19 crisis?
-2. 
+
+The key objective of this study is to investigate the following: can market volatility be accurately modeled as discrete latent regime shifts, and does introducing a hierarchical prior structure (HHMM) provide a more robust framework for detecting sudden financial crises compared to a baseline Hidden Markov Model? Furthermore, by fitting these models using both Hamiltonian Monte Carlo (HMC) and Variational Inference (VI), this study aims to evaluate the tradeoff between inferential accuracy and computational efficiency when analyzing major market shocks like the Dot-com Bubble, the 2008 Financial Crisis, and the COVID-19 crash.
+
 To reduce the computational burden while preserving essential volatility clustering, the daily S&P500 data will be mutated to only include the final trading day of each week to establish consistent weekly boundaries. These weekly prices will then be transformed into weekly log returns, calculated as $Y_t = \ln(P_t / P_{t-1})$. This transformation is critical, as it ensures a stationary distribution of the time series which facilitates its modelling.
 
 ### Hidden Markov Model (Model I)
@@ -298,16 +299,28 @@ bind_rows(data_hmc, data_vi) %>%
 
 Across both the HMM and Hierarchical HMM, VI produced similar point estimates and smoothed probabilities (visualized in the Appendix) compared to HMC, but differed noticeably in how they measured uncertainty and in their runtimes. HMC took roughly 33 seconds for both models, resulting in well-calibrated credible intervals that accurately reflect the full uncertainty of the posterior. On the other hand, VI converged in just 5.9 seconds for both models, averaging $5.7\times$ faster than HMC. However, this speed was achieved at the cost of artificially narrow, under-dispersed credible intervals as seen above in Figure 2. This underestimation of uncertainty is a well-known consequence of the mean-field independence assumption, which ignores posterior correlations between parameters. Overall, the pattern was consistent: HMC gives accurate, reliable uncertainty estimates but takes longer, while VI is much faster but sacrifices inferential precision by under-reporting variance.
 
+### Individual Contributions
+
+Mikayla Liang was responsible for writing the Abstract, Introduction, and Literature Review sections of the report, establishing the motivation for the study and situating the work within existing research on Bayesian inference and financial volatility modelling. She also implemented Variational Inference for both the HMM and the Hierarchical HMM in Stan and conducted the comparison between VI and HMC, evaluating differences in runtime and posterior uncertainty quantification.
+
+Alec Neme was responsible for the core data pipeline, mathematical model architecture, and rigorous statistical validation. He acquired and transformed the S&P 500 financial data, and formulated and implemented both the baseline Hidden Markov Model and the Hierarchical HMM via Hamiltonian Monte Carlo in Stan. This included programming the Forward-Backward algorithms for Rao-Blackwellization to compute marginalized likelihoods and smoothed regime probabilities. Additionally, Alec designed and executed the Simulation-Based Calibration (SBC) to verify computational correctness, performed the rolling Leave-One-Out (LOO) cross-validation to assess out-of-sample predictive accuracy, generated all data visualizations and MCMC diagnostics, and authored the Methodology and Results & Discussion sections regarding the HMC approach of the project. Alec also did final edit of the document. 
+
+Additionally, generative AI was consulted to address the issue of noisy regime switching (jitteriness) within the latent state estimations, and provided debugging assistance in implementing the log-space Forward-Backward algorithm in Stan.
+
 \newpage 
 ## References
 
 Hamilton, J. D. (1989). A new approach to the economic analysis of nonstationary time series and the business cycle. Econometrica, 57(2), 357–384. https://doi.org/10.2307/1912559
 
+
 Patel, R. M. (2024). Bayesian estimation techniques in stock market forecasting: An empirical analysis using Wipro stock data. International Journal for Innovative Research in Multidisciplinary Field, 10(10), 35–38. https://www.ijirmf.com/wp-content/uploads/IJIRMF202410007-min.pdf
+
 
 Rabiner, L. R. (1989). A tutorial on hidden Markov models and selected applications in speech recognition. Proceedings of the IEEE, 77(2), 257–286. https://doi.org/10.1109/5.18626
 
+
 V-Lab. (n.d.). GARCH model documentation. NYU Stern Volatility Institute. https://vlab.stern.nyu.edu/docs/volatility/GARCH
+
 
 Wang, M., Lin, Y.-H., & Mikhelson, I. (2020). Regime-switching factor investing with hidden Markov models. Journal of Risk and Financial Management, 13(12), 311. https://doi.org/10.3390/jrfm13120311
 
