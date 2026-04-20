@@ -125,7 +125,7 @@ $$q^*_\phi = \arg\min_{\phi} \text{KL}(q_\phi \| \pi)$$
 
 We adopt the meanfield variational family, which approximates the posterior using a multivariate normal distribution with a diagonal covariance matrix. The design of our Stan model $\sigma_2 = \sigma_1 + \sigma_{diff}$ encodes the primary parameter relationships directly, making the meanfield independence assumption reasonable for our model.
 
-## Section II: Implmentation of HMM and Hierarchical HMM
+## Section II: Implmentation of Models
 
 ```{r message=FALSE, echo=FALSE, warning=FALSE}
 project_tickers <- c("^GSPC")
@@ -193,6 +193,7 @@ fit_hmc_hhmm <- model_hierarchical$sample(
 )
 ```
 
+
 ```{r}
 prob_crisis_draws <- fit_hmc_hmm$draws("prob_crisis", format = "matrix")
 
@@ -239,129 +240,128 @@ Both the baseline and hierarchical Hidden Markov Models successfully identified 
 
 The near-identical recovery of the parameter values across both models is a strong indicator of parameter robustness. Despite the hierarchical model introducing a more complex prior structure, both models converged on essentially the same baseline and crisis volatility scales. This striking similarity suggests that the likelihood signal from the S&P 500 data is exceptionally strong, effectively overwhelming the structural differences between the flat and hierarchical priors.
 
-### HMM Diagnostic Plots
+<!-- ### HMM Diagnostic Plots -->
 
-```{r}
-params_naive <- c("P11", "P22", "sigma_1", "sigma_2")
+<!-- ```{r} -->
+<!-- params_naive <- c("P11", "P22", "sigma_1", "sigma_2") -->
 
-mcmc_trace(fit_hmc_hmm$draws(params_naive)) +
-  ggtitle("Trace Plots: Naive HMM") +
-  theme_minimal()
+<!-- mcmc_trace(fit_hmc_hmm$draws(params_naive)) + -->
+<!--   ggtitle("Trace Plots: Naive HMM") + -->
+<!--   theme_minimal() -->
 
-mcmc_rank_hist(fit_hmc_hmm$draws(params_naive)) +
-  ggtitle("Rank Histograms: Naive HMM") +
-  theme_minimal() 
-```
+<!-- mcmc_rank_hist(fit_hmc_hmm$draws(params_naive)) + -->
+<!--   ggtitle("Rank Histograms: Naive HMM") + -->
+<!--   theme_minimal()  -->
+<!-- ``` -->
 
-### Correctness Check With Synthetic Data Model 1
+<!-- ### Correctness Check With Synthetic Data Model I -->
 
-```{r message=FALSE}
-set.seed(405)
-n_sims <- 100
-T_sim <- nrow(returns) 
-true_mu <- 0
-true_sigma <- c(0.015, 0.040)
-true_P <- matrix(c(0.95, 0.05, 0.10, 0.90), nrow = 2, byrow = TRUE)
+<!-- ```{r message=FALSE} -->
+<!-- set.seed(405) -->
+<!-- n_sims <- 100 -->
+<!-- T_sim <- nrow(returns)  -->
+<!-- true_mu <- 0 -->
+<!-- true_sigma <- c(0.015, 0.040) -->
+<!-- true_P <- matrix(c(0.95, 0.05, 0.10, 0.90), nrow = 2, byrow = TRUE) -->
 
-coverage_results <- data.frame(
-  P11_captured = logical(n_sims),
-  P22_captured = logical(n_sims),
-  sigma1_captured = logical(n_sims),
-  sigma2_captured = logical(n_sims)
-)
+<!-- coverage_results <- data.frame( -->
+<!--   P11_captured = logical(n_sims), -->
+<!--   P22_captured = logical(n_sims), -->
+<!--   sigma1_captured = logical(n_sims), -->
+<!--   sigma2_captured = logical(n_sims) -->
+<!-- ) -->
 
-cat("Starting 100 simulations... This will take a few minutes.\n")
+<!-- cat("Starting 100 simulations... This will take a few minutes.\n") -->
 
-for (i in 1:n_sims) {
-  true_states <- numeric(T_sim)
-  true_states[1] <- 1
-  for (t in 2:T_sim) {
-    true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ])
-  }
-  
-  simulated_Y <- numeric(T_sim)
-  for (t in 1:T_sim) {
-    simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]])
-  }
-  
-  fit_sim <- model_hmm$sample(
-    data = list(T = T_sim, Y = simulated_Y), 
-    chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE
-  )
-  
-  draws <- fit_sim$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix")
-  cis <- apply(draws, 2, quantile, probs = c(0.05, 0.95))
-  
-  coverage_results$P11_captured[i] <- true_P[1,1] >= cis[1, "P11"] && true_P[1,1] <= cis[2, "P11"]
-  coverage_results$P22_captured[i] <- true_P[2,2] >= cis[1, "P22"] && true_P[2,2] <= cis[2, "P22"]
-  coverage_results$sigma1_captured[i] <- true_sigma[1] >= cis[1, "sigma_1"] && true_sigma[1] <= cis[2, "sigma_1"]
-  coverage_results$sigma2_captured[i] <- true_sigma[2] >= cis[1, "sigma_2"] && true_sigma[2] <= cis[2, "sigma_2"]
-  
-  if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n")
-}
+<!-- for (i in 1:n_sims) { -->
+<!--   true_states <- numeric(T_sim) -->
+<!--   true_states[1] <- 1 -->
+<!--   for (t in 2:T_sim) { -->
+<!--     true_states[t] <- sample(1:2, size = 1, prob = true_P[true_states[t-1], ]) -->
+<!--   } -->
 
-cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
-print(colMeans(coverage_results))
-```
+<!--   simulated_Y <- numeric(T_sim) -->
+<!--   for (t in 1:T_sim) { -->
+<!--     simulated_Y[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states[t]]) -->
+<!--   } -->
 
-```{r}
-cat("\n--- 100-RUN CALIBRATION RESULTS ---\n")
-print(colMeans(coverage_results))
-```
+<!--   fit_sim <- model_hmm$sample( -->
+<!--     data = list(T = T_sim, Y = simulated_Y),  -->
+<!--     chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE -->
+<!--   ) -->
+
+<!--   draws <- fit_sim$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix") -->
+<!--   cis <- apply(draws, 2, quantile, probs = c(0.05, 0.95)) -->
+
+<!--   coverage_results$P11_captured[i] <- true_P[1,1] >= cis[1, "P11"] && true_P[1,1] <= cis[2, "P11"] -->
+<!--   coverage_results$P22_captured[i] <- true_P[2,2] >= cis[1, "P22"] && true_P[2,2] <= cis[2, "P22"] -->
+<!--   coverage_results$sigma1_captured[i] <- true_sigma[1] >= cis[1, "sigma_1"] && true_sigma[1] <= cis[2, "sigma_1"] -->
+<!--   coverage_results$sigma2_captured[i] <- true_sigma[2] >= cis[1, "sigma_2"] && true_sigma[2] <= cis[2, "sigma_2"] -->
+
+<!--   if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n") -->
+<!-- } -->
+
+<!-- cat("\n--- 100-RUN CALIBRATION RESULTS ---\n") -->
+<!-- print(colMeans(coverage_results)) -->
+<!-- ``` -->
+
+<!-- ```{r} -->
+<!-- cat("\n--- 100-RUN CALIBRATION RESULTS ---\n") -->
+<!-- print(colMeans(coverage_results)) -->
+<!-- ``` -->
 
 To validate the computational correctness of our baseline model, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic datasets matching the full length of our sample. For a 90% credible interval, a properly calibrated model should capture the true parameters approximately 90% of the time. Our empirical coverage results were 0.91 for $P_{11}$, 0.92 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. While $\sigma_1$ and $\sigma_2$ sit slightly below the nominal 0.90 target, this deviation is entirely expected due to Monte Carlo error. With 100 simulations, the binomial standard deviation for a 90% probability is roughly 3%, meaning any result between 0.87 and 0.93 is within normal statistical noise. Because the coverage for all four parameters falls within this expected range, we can conclude that our Stan implementation is software defect-free for our simple Hidden Markov Model.
 
+<!-- ### Leave One Out Goodness of Fit Check HMM Model -->
 
-### Leave One Out Goodness of Fit Check HMM Model
+<!-- ```{r message = FALSE} -->
+<!-- subset_returns <- tail(returns, 300)  -->
+<!-- n_total_subset <- nrow(subset_returns) -->
+<!-- test_weeks <- 50  -->
 
-```{r message = FALSE}
-subset_returns <- tail(returns, 300) 
-n_total_subset <- nrow(subset_returns)
-test_weeks <- 50 
+<!-- results_list <- list() -->
 
-results_list <- list()
+<!-- cat("Starting 50 rolling LOO predictions...\n") -->
 
-cat("Starting 50 rolling LOO predictions...\n")
+<!-- for (i in test_weeks:1) { -->
+<!--   current_T <- n_total_subset - i -->
+<!--   actual_y <- subset_returns$log_return[current_T + 1] -->
 
-for (i in test_weeks:1) {
-  current_T <- n_total_subset - i
-  actual_y <- subset_returns$log_return[current_T + 1]
-  
-  # Package the truncated data up to current_T
-  stan_data_loo <- list(
-    T = current_T,
-    Y = subset_returns$log_return[1:current_T]
-  )
-  
-  # Fit the model
-  fit_loop <- model_hmm$sample(
-    data = stan_data_loo, 
-    chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE
-  )
-  
-  # Extract prediction and calculate 90% CI
-  y_pred <- fit_loop$draws("y_predict", format = "matrix")
-  ci <- quantile(y_pred, probs = c(0.05, 0.95))
-  
-  inside <- actual_y >= ci[1] && actual_y <= ci[2]
-  
-  results_list[[length(results_list) + 1]] <- data.frame(
-    Date = subset_returns$date[current_T + 1],
-    Actual = actual_y,
-    CI_Lower = ci[1],
-    CI_Upper = ci[2],
-    Captured = inside
-  )
-  
-  if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n")
-}
+<!--   # Package the truncated data up to current_T -->
+<!--   stan_data_loo <- list( -->
+<!--     T = current_T, -->
+<!--     Y = subset_returns$log_return[1:current_T] -->
+<!--   ) -->
 
-merged_loo_df <- do.call(rbind, results_list)
-proportion_covered <- mean(merged_loo_df$Captured)
+<!--   # Fit the model -->
+<!--   fit_loop <- model_hmm$sample( -->
+<!--     data = stan_data_loo,  -->
+<!--     chains = 4, parallel_chains = 4, refresh = 0, show_messages = FALSE -->
+<!--   ) -->
 
-cat("\n--- MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
-cat("Proportion of true values inside the 90% CI:", proportion_covered, "\n")
-```
+<!--   # Extract prediction and calculate 90% CI -->
+<!--   y_pred <- fit_loop$draws("y_predict", format = "matrix") -->
+<!--   ci <- quantile(y_pred, probs = c(0.05, 0.95)) -->
+
+<!--   inside <- actual_y >= ci[1] && actual_y <= ci[2] -->
+
+<!--   results_list[[length(results_list) + 1]] <- data.frame( -->
+<!--     Date = subset_returns$date[current_T + 1], -->
+<!--     Actual = actual_y, -->
+<!--     CI_Lower = ci[1], -->
+<!--     CI_Upper = ci[2], -->
+<!--     Captured = inside -->
+<!--   ) -->
+
+<!--   if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n") -->
+<!-- } -->
+
+<!-- merged_loo_df <- do.call(rbind, results_list) -->
+<!-- proportion_covered <- mean(merged_loo_df$Captured) -->
+
+<!-- cat("\n--- MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n") -->
+<!-- cat("Proportion of true values inside the 90% CI:", proportion_covered, "\n") -->
+<!-- ``` -->
 
 To check the goodness of fit and out-of-sample prediction of the baseline model, we expanded our posterior predictive check to a rolling Leave-One-Out (LOO) cross-validation over a 50-week period. We chose a 50-week period in order to keep the computational times lower. To preserve the sequential dependence of the Hidden Markov Model, we iteratively truncated the time series at a moving boundary $t$, requiring the model to generate a one-step-ahead forecast for week $t+1$ using only strictly historical data (where $t$ ranges over the final 50 weeks of our dataset, terminating at $T-1$).
 
@@ -369,13 +369,7 @@ For each of the 50 iterations, we computed the 90% posterior predictive credible
 
 The uncertainty bounds generated by the $\text{Exponential}(1)$ prior and Normal emission distributions were wide enough to account for the realized market volatility over the 50-week test period. This confirms that the baseline HMM does not suffer from gross mis-specification during standard market regimes and provides reliable predictive bounds for near-term forecasting.
 
-### Model 1 (Naive HMM) Results & Discussion
-
-We started by just using the forward algorithm to calculate "filtered" probabilities. Because this method only looks at past and present data, it was way too reactive; the model basically panicked at every little market dip, giving us very jittery results instead of identifying actual, long-term crisis periods. To smooth out the jitter, we added the backward algorithm to calculate "smoothed" probabilities, drawing on concepts from Rabiner (1989) and a 2020 MDPI paper. The goal here was to let the model look at the entire timeline of data at once. With the benefit of hindsight, we hoped it would realize that massive crashes (like 2008) are sustained events, not just random one-week hiccups. The backward pass seemed to make this issue a lot better. 
-
-Regarding the potential limitations of the model, we thought that prior sensitivity may be a thing, especially for market volatility. We would generally expect the states of the markets to be persistent, meaning parameters like $P_{11}$ and $P_{22}$ should have higher values. Because of this, using the rigid exponential(1) prior for the market volatilities may be actively restricting the model.
-
-## Variational Inference
+### Variational Inference HMM
 
 ``` {r message=FALSE}
 fit_vi_hmm <- model_hmm$variational(
@@ -436,173 +430,9 @@ bind_rows(data_hmc, data_vi) %>%
 ```
 
 
-### Implmentation of HHMM
+### Variational Inference HHMM
 
-```{r message=FALSE}
-model_hierarchical <- cmdstan_model("hhmm_volatility.stan")
-
-stan_data_hierarchical <- list(
-  T = nrow(returns),
-  Y = returns$log_return 
-)
-
-fit_hmc_hhmm <- model_hierarchical$sample(
-  data = stan_data_hierarchical,
-  chains = 4,
-  parallel_chains = 4,
-  iter_warmup = 1000,
-  iter_sampling = 1000,
-  seed = 405,
-  refresh = 0
-)
-```
-
-```{r}
-prob_crisis_draws_heir <- fit_hmc_hhmm$draws("prob_crisis", format = "matrix")
-
-mean_prob_crisis_heir <- colMeans(prob_crisis_draws_heir)
-
-data.frame(
-  date = returns$date,
-  prob = mean_prob_crisis_heir
-) %>%
-  ggplot(aes(x = date, y = prob)) +
-  geom_line(color = "firebrick") +
-  theme_minimal() +
-  labs(
-    title = "Smoothed Probability of Market Crisis Regime (Hierarchical Model)",
-    subtitle = expression("Posterior Mean of " * P(X[t] == Crisis ~ "|" ~ Y["1:T"])),
-    x = "Date",
-    y = "Probability"
-  )
-
-as.data.frame(fit_hmc_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
-
-```
-
-
-### Diagnostics HHMM
-
-```{r}
-params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2")
-
-mcmc_trace(fit_hmc_hhmm$draws(params_hhmm)) +
-  ggtitle("Trace Plots: Hierarchical HMM") +
-  theme_minimal()
-
-mcmc_rank_hist(fit_hmc_hhmm$draws(params_hhmm)) +
-  ggtitle("Rank Histograms: Hierarchical HMM") +
-  theme_minimal()
-```
-
-### Correctness check HHMM
-
-```{r message=FALSE}
-set.seed(405)
-
-coverage_results_hierarchical <- data.frame(
-  P11_captured = logical(n_sims),
-  P22_captured = logical(n_sims),
-  sigma1_captured = logical(n_sims),
-  sigma2_captured = logical(n_sims)
-)
-
-cat("Starting 100 simulations for Hierarchical Model... This will take a few minutes.\n")
-
-for (i in 1:n_sims) {
-  true_states_hhmm <- numeric(T_sim)
-  true_states_hhmm[1] <- 1
-  for (t in 2:T_sim) {
-    true_states_hhmm[t] <- sample(1:2, size = 1, prob = true_P[true_states_hhmm[t-1], ])
-  }
-  
-  simulated_Y_hhmm <- numeric(T_sim)
-  for (t in 1:T_sim) {
-    simulated_Y_hhmm[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states_hhmm[t]])
-  }
-  
-  fit_sim_hierarchical <- model_hierarchical$sample(
-    data = list(T = T_sim, Y = simulated_Y_hhmm), 
-    chains = 4, 
-    parallel_chains = 4, 
-    adapt_delta = 0.95, # Crucial for hierarchical models
-    refresh = 0, 
-    show_messages = FALSE
-  )
-  
-  draws_hierarchical <- fit_sim_hierarchical$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix")
-  cis_hierarchical <- apply(draws_hierarchical, 2, quantile, probs = c(0.05, 0.95))
-  
-  coverage_results_hierarchical$P11_captured[i] <- true_P[1,1] >= cis_hierarchical[1, "P11"] && true_P[1,1] <= cis_hierarchical[2, "P11"]
-  coverage_results_hierarchical$P22_captured[i] <- true_P[2,2] >= cis_hierarchical[1, "P22"] && true_P[2,2] <= cis_hierarchical[2, "P22"]
-  coverage_results_hierarchical$sigma1_captured[i] <- true_sigma[1] >= cis_hierarchical[1, "sigma_1"] && true_sigma[1] <= cis_hierarchical[2, "sigma_1"]
-  coverage_results_hierarchical$sigma2_captured[i] <- true_sigma[2] >= cis_hierarchical[1, "sigma_2"] && true_sigma[2] <= cis_hierarchical[2, "sigma_2"]
-  
-  if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n")
-}
-
-cat("\n--- HIERARCHICAL 100-RUN CALIBRATION RESULTS ---\n")
-print(colMeans(coverage_results_hierarchical))
-```
-
-To evaluate the computational correctness of the Hierarchical Hidden Markov Model and rule out software defects, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic data matching our sample length. The empirical coverage results were 0.88 for $P_{11}$, 0.89 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. All four parameter coverages fall within the expected binomial margin of error for 100 simulations (roughly $\pm 3\%$). This confirms that the hierarchical priors are correctly implemented.
-
-### LOO Goodness of fit 
-
-```{r message=FALSE}
-subset_returns_hhmm <- tail(returns, 300) 
-n_total_subset_hhmm <- nrow(subset_returns_hhmm)
-test_weeks_hhmm <- 50 
-
-results_list_hierarchical <- list()
-
-cat("Starting 50 rolling LOO predictions for Hierarchical Model...\n")
-
-for (i in test_weeks_hhmm:1) {
-  current_T_hhmm <- n_total_subset_hhmm - i
-  actual_y_hhmm <- subset_returns_hhmm$log_return[current_T_hhmm + 1]
-  
-  stan_data_loo_hierarchical <- list(
-    T = current_T_hhmm,
-    Y = subset_returns_hhmm$log_return[1:current_T_hhmm]
-  )
-  
-  fit_loop_hierarchical <- model_hierarchical$sample(
-    data = stan_data_loo_hierarchical, 
-    chains = 4, 
-    parallel_chains = 4, 
-    adapt_delta = 0.95,
-    refresh = 0, 
-    show_messages = FALSE
-  )
-  
-  y_pred_hierarchical <- fit_loop_hierarchical$draws("y_predict", format = "matrix")
-  ci_hierarchical <- quantile(y_pred_hierarchical, probs = c(0.05, 0.95))
-  
-  inside_hhmm <- actual_y_hhmm >= ci_hierarchical[1] && actual_y_hhmm <= ci_hierarchical[2]
-  
-  results_list_hierarchical[[length(results_list_hierarchical) + 1]] <- data.frame(
-    Date = subset_returns_hhmm$date[current_T_hhmm + 1],
-    Actual = actual_y_hhmm,
-    CI_Lower = ci_hierarchical[1],
-    CI_Upper = ci_hierarchical[2],
-    Captured = inside_hhmm
-  )
-  
-  if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n")
-}
-
-merged_loo_df_hierarchical <- do.call(rbind, results_list_hierarchical)
-proportion_covered_hierarchical <- mean(merged_loo_df_hierarchical$Captured)
-
-cat("\n--- HIERARCHICAL MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n")
-cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n")
-```
-To evaluate the goodness of fit and out-of-sample predictive calibration of the Hierarchical Hidden Markov Model, we did the same procedure as with the simple model. The hierarchical model yielded an empirical coverage proportion of 0.92 (capturing 46 of the 50 out-of-sample weeks). This result indicates good model calibration, matching the nominal 90% target even more closely than the baseline model.
-
-## Variational Inference
-
-``` {r message=FALSE}
+``` {r message=FALSE, echo=FALSE}
 fit_vi_hhmm <- model_hierarchical$variational(
   data = stan_data_hierarchical,
   seed = 405,
@@ -632,11 +462,136 @@ data.frame(
 as.data.frame(fit_vi_hhmm$summary(c("P11", "P22", "sigma_1", "sigma_2")))
 ```
 
+<!-- ### Diagnostics HHMM -->
+
+<!-- ```{r} -->
+<!-- params_hhmm <- c("mu", "lambda", "P11", "P22", "sigma_1", "sigma_2") -->
+
+<!-- mcmc_trace(fit_hmc_hhmm$draws(params_hhmm)) + -->
+<!--   ggtitle("Trace Plots: Hierarchical HMM") + -->
+<!--   theme_minimal() -->
+
+<!-- mcmc_rank_hist(fit_hmc_hhmm$draws(params_hhmm)) + -->
+<!--   ggtitle("Rank Histograms: Hierarchical HMM") + -->
+<!--   theme_minimal() -->
+<!-- ``` -->
+
+<!-- ### Correctness check HHMM -->
+
+<!-- ```{r message=FALSE} -->
+<!-- set.seed(405) -->
+
+<!-- coverage_results_hierarchical <- data.frame( -->
+<!--   P11_captured = logical(n_sims), -->
+<!--   P22_captured = logical(n_sims), -->
+<!--   sigma1_captured = logical(n_sims), -->
+<!--   sigma2_captured = logical(n_sims) -->
+<!-- ) -->
+
+<!-- cat("Starting 100 simulations for Hierarchical Model... This will take a few minutes.\n") -->
+
+<!-- for (i in 1:n_sims) { -->
+<!--   true_states_hhmm <- numeric(T_sim) -->
+<!--   true_states_hhmm[1] <- 1 -->
+<!--   for (t in 2:T_sim) { -->
+<!--     true_states_hhmm[t] <- sample(1:2, size = 1, prob = true_P[true_states_hhmm[t-1], ]) -->
+<!--   } -->
+
+<!--   simulated_Y_hhmm <- numeric(T_sim) -->
+<!--   for (t in 1:T_sim) { -->
+<!--     simulated_Y_hhmm[t] <- rnorm(1, mean = true_mu, sd = true_sigma[true_states_hhmm[t]]) -->
+<!--   } -->
+
+<!--   fit_sim_hierarchical <- model_hierarchical$sample( -->
+<!--     data = list(T = T_sim, Y = simulated_Y_hhmm),  -->
+<!--     chains = 4,  -->
+<!--     parallel_chains = 4,  -->
+<!--     adapt_delta = 0.95, # Crucial for hierarchical models -->
+<!--     refresh = 0,  -->
+<!--     show_messages = FALSE -->
+<!--   ) -->
+
+<!--   draws_hierarchical <- fit_sim_hierarchical$draws(c("P11", "P22", "sigma_1", "sigma_2"), format = "matrix") -->
+<!--   cis_hierarchical <- apply(draws_hierarchical, 2, quantile, probs = c(0.05, 0.95)) -->
+
+<!--   coverage_results_hierarchical$P11_captured[i] <- true_P[1,1] >= cis_hierarchical[1, "P11"] && true_P[1,1] <= cis_hierarchical[2, "P11"] -->
+<!--   coverage_results_hierarchical$P22_captured[i] <- true_P[2,2] >= cis_hierarchical[1, "P22"] && true_P[2,2] <= cis_hierarchical[2, "P22"] -->
+<!--   coverage_results_hierarchical$sigma1_captured[i] <- true_sigma[1] >= cis_hierarchical[1, "sigma_1"] && true_sigma[1] <= cis_hierarchical[2, "sigma_1"] -->
+<!--   coverage_results_hierarchical$sigma2_captured[i] <- true_sigma[2] >= cis_hierarchical[1, "sigma_2"] && true_sigma[2] <= cis_hierarchical[2, "sigma_2"] -->
+
+<!--   if (i %% 10 == 0) cat("Finished simulation", i, "of", n_sims, "\n") -->
+<!-- } -->
+
+<!-- cat("\n--- HIERARCHICAL 100-RUN CALIBRATION RESULTS ---\n") -->
+<!-- print(colMeans(coverage_results_hierarchical)) -->
+<!-- ``` -->
+
+To evaluate the computational correctness of the Hierarchical Hidden Markov Model and rule out software defects, we performed a 100-run Simulation-Based Calibration (SBC) using synthetic data matching our sample length. The empirical coverage results were 0.88 for $P_{11}$, 0.89 for $P_{22}$, 0.87 for $\sigma_1$, and 0.89 for $\sigma_2$. All four parameter coverages fall within the expected binomial margin of error for 100 simulations (roughly $\pm 3\%$). This confirms that the hierarchical priors are correctly implemented.
+
+<!-- ### LOO Goodness of fit  -->
+
+<!-- ```{r message=FALSE} -->
+<!-- subset_returns_hhmm <- tail(returns, 300)  -->
+<!-- n_total_subset_hhmm <- nrow(subset_returns_hhmm) -->
+<!-- test_weeks_hhmm <- 50  -->
+
+<!-- results_list_hierarchical <- list() -->
+
+<!-- cat("Starting 50 rolling LOO predictions for Hierarchical Model...\n") -->
+
+<!-- for (i in test_weeks_hhmm:1) { -->
+<!--   current_T_hhmm <- n_total_subset_hhmm - i -->
+<!--   actual_y_hhmm <- subset_returns_hhmm$log_return[current_T_hhmm + 1] -->
+
+<!--   stan_data_loo_hierarchical <- list( -->
+<!--     T = current_T_hhmm, -->
+<!--     Y = subset_returns_hhmm$log_return[1:current_T_hhmm] -->
+<!--   ) -->
+
+<!--   fit_loop_hierarchical <- model_hierarchical$sample( -->
+<!--     data = stan_data_loo_hierarchical,  -->
+<!--     chains = 4,  -->
+<!--     parallel_chains = 4,  -->
+<!--     adapt_delta = 0.95, -->
+<!--     refresh = 0,  -->
+<!--     show_messages = FALSE -->
+<!--   ) -->
+
+<!--   y_pred_hierarchical <- fit_loop_hierarchical$draws("y_predict", format = "matrix") -->
+<!--   ci_hierarchical <- quantile(y_pred_hierarchical, probs = c(0.05, 0.95)) -->
+
+<!--   inside_hhmm <- actual_y_hhmm >= ci_hierarchical[1] && actual_y_hhmm <= ci_hierarchical[2] -->
+
+<!--   results_list_hierarchical[[length(results_list_hierarchical) + 1]] <- data.frame( -->
+<!--     Date = subset_returns_hhmm$date[current_T_hhmm + 1], -->
+<!--     Actual = actual_y_hhmm, -->
+<!--     CI_Lower = ci_hierarchical[1], -->
+<!--     CI_Upper = ci_hierarchical[2], -->
+<!--     Captured = inside_hhmm -->
+<!--   ) -->
+
+<!--   if (i %% 10 == 0) cat("Weeks remaining to test:", i, "\n") -->
+<!-- } -->
+
+<!-- merged_loo_df_hierarchical <- do.call(rbind, results_list_hierarchical) -->
+<!-- proportion_covered_hierarchical <- mean(merged_loo_df_hierarchical$Captured) -->
+
+<!-- cat("\n--- HIERARCHICAL MULTIPLE LOO GOODNESS OF FIT RESULTS ---\n") -->
+<!-- cat("Proportion of true values inside the 90% CI:", proportion_covered_hierarchical, "\n") -->
+<!-- ``` -->
+
+To evaluate the goodness of fit and out-of-sample predictive calibration of the Hierarchical Hidden Markov Model, we did the same procedure as with the simple model. The hierarchical model yielded an empirical coverage proportion of 0.92 (capturing 46 of the 50 out-of-sample weeks). This result indicates good model calibration, matching the nominal 90% target even more closely than the baseline model.
+
 TODO: [Insert Comparison for HHMM]
 
 ## Discussion
 
-Notes for Discussion
+### Model 1 (Naive HMM) Results & Discussion
+
+We started by just using the forward algorithm to calculate "filtered" probabilities. Because this method only looks at past and present data, it was way too reactive; the model basically panicked at every little market dip, giving us very jittery results instead of identifying actual, long-term crisis periods. To smooth out the jitter, we added the backward algorithm to calculate "smoothed" probabilities, drawing on concepts from Rabiner (1989) and a 2020 MDPI paper. The goal here was to let the model look at the entire timeline of data at once. With the benefit of hindsight, we hoped it would realize that massive crashes (like 2008) are sustained events, not just random one-week hiccups. The backward pass seemed to make this issue a lot better. 
+
+Regarding the potential limitations of the model, we thought that prior sensitivity may be a thing, especially for market volatility. We would generally expect the states of the markets to be persistent, meaning parameters like $P_{11}$ and $P_{22}$ should have higher values. Because of this, using the rigid exponential(1) prior for the market volatilities may be actively restricting the model.
+
 
 When compared to the parameter estimates generated by the more complex Hierarchical HMM, the baseline estimates remain remarkably stable. The near-identical recovery of both the emission volatilities and the transition matrix across different model architectures demonstrates high parameter robustness, confirming that these volatility regimes are intrinsic features of the data rather than artifacts of a specific prior structure.
 
